@@ -22,6 +22,14 @@ brew install qemu
 pi install git:github.com/<owner>/gondolin-rises
 ```
 
+## Sandbox toggle
+
+Sandbox starts on. Run `/sandbox` inside pi to toggle off or on. Toggle waits for agent to become idle.
+
+When off, `read`, `write`, `edit`, `bash`, and user `!` commands run directly on host, without VM isolation. Status and notification show current state.
+
+VM stays alive while off, gets reused when on, and closes on session shutdown. Failed startup never falls back to host; toggle off explicitly for host execution, or retry startup.
+
 ## License
 
 [Apache-2.0](LICENSE), matching upstream Gondolin example.

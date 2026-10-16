@@ -169,6 +169,7 @@ export default function (pi: ExtensionAPI) {
   const localEdit = createEditTool(localCwd);
   const localBash = createBashTool(localCwd);
 
+  let sandboxEnabled = true;
   let vm: VM | null = null;
   let vmStarting: Promise<VM> | null = null;
 
@@ -198,7 +199,7 @@ export default function (pi: ExtensionAPI) {
         "gondolin",
         ctx.ui.theme.fg(
           "accent",
-          `Gondolin: running (${localCwd} -> ${GUEST_WORKSPACE})`,
+          `Gondolin: on (${localCwd} -> ${GUEST_WORKSPACE})`,
         ),
       );
       ctx?.ui.notify(
@@ -208,12 +209,33 @@ export default function (pi: ExtensionAPI) {
       return created;
     })();
 
-    return vmStarting;
+    try {
+      return await vmStarting;
+    } finally {
+      vmStarting = null;
+    }
   }
+
+  pi.registerCommand("sandbox", {
+    description: "Toggle Gondolin sandbox on or off",
+    handler: async (_args, ctx) => {
+      await ctx.waitForIdle();
+      if (!sandboxEnabled) await ensureVm(ctx);
+      sandboxEnabled = !sandboxEnabled;
+      const status = sandboxEnabled
+        ? "Gondolin: on"
+        : "Gondolin: off — tools and ! commands run on host";
+      ctx.ui.setStatus(
+        "gondolin",
+        ctx.ui.theme.fg(sandboxEnabled ? "accent" : "warning", status),
+      );
+      ctx.ui.notify(status, sandboxEnabled ? "info" : "warning");
+    },
+  });
 
   pi.on("session_start", async (_event, ctx) => {
     // Start eagerly so the user sees errors early (missing qemu, etc.)
-    await ensureVm(ctx);
+    if (sandboxEnabled) await ensureVm(ctx);
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
@@ -233,6 +255,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     ...localRead,
     async execute(id, params, signal, onUpdate, ctx) {
+      if (!sandboxEnabled)
+        return localRead.execute(id, params, signal, onUpdate);
       const activeVm = await ensureVm(ctx);
       const tool = createReadTool(localCwd, {
         operations: createGondolinReadOps(activeVm, localCwd),
@@ -244,6 +268,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     ...localWrite,
     async execute(id, params, signal, onUpdate, ctx) {
+      if (!sandboxEnabled)
+        return localWrite.execute(id, params, signal, onUpdate);
       const activeVm = await ensureVm(ctx);
       const tool = createWriteTool(localCwd, {
         operations: createGondolinWriteOps(activeVm, localCwd),
@@ -255,6 +281,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     ...localEdit,
     async execute(id, params, signal, onUpdate, ctx) {
+      if (!sandboxEnabled)
+        return localEdit.execute(id, params, signal, onUpdate);
       const activeVm = await ensureVm(ctx);
       const tool = createEditTool(localCwd, {
         operations: createGondolinEditOps(activeVm, localCwd),
@@ -266,6 +294,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     ...localBash,
     async execute(id, params, signal, onUpdate, ctx) {
+      if (!sandboxEnabled)
+        return localBash.execute(id, params, signal, onUpdate);
       const activeVm = await ensureVm(ctx);
       const tool = createBashTool(localCwd, {
         operations: createGondolinBashOps(activeVm, localCwd),
@@ -275,13 +305,15 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Run user `!` commands inside the VM too
-  pi.on("user_bash", (_event, _ctx) => {
-    if (!vm) return;
-    return { operations: createGondolinBashOps(vm, localCwd) };
+  pi.on("user_bash", async (_event, ctx) => {
+    if (!sandboxEnabled) return;
+    const activeVm = await ensureVm(ctx);
+    return { operations: createGondolinBashOps(activeVm, localCwd) };
   });
 
   // Replace the CWD line in the system prompt so the model sees /workspace
   pi.on("before_agent_start", async (event, ctx) => {
+    if (!sandboxEnabled) return;
     await ensureVm(ctx);
     const modified = event.systemPrompt.replace(
       `Current working directory: ${localCwd}`,
