@@ -1,0 +1,29 @@
+{
+  "name": "gondolin-rises",
+  "version": "0.1.0",
+  "description": "pi extension providing a configurable sandbox via Gondolin",
+  "type": "module",
+  "license": "Apache-2.0",
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "@earendil-works/gondolin": "^0.13.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

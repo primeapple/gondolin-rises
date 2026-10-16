@@ -6,7 +6,7 @@ Based on upstream [pi-gondolin.ts example](https://github.com/earendil-works/gon
 
 ## Requirements
 
-- Node.js 22.19.0 or newer (Gondolin requirement).
+- Node.js 24 or newer.
 - pi installed, with `pi` on `PATH`.
 - QEMU installed. See [Gondolin Quick Start](https://github.com/earendil-works/gondolin#cli-quick-start) for platform setup.
 
@@ -15,3 +15,13 @@ On macOS:
 ```sh
 brew install qemu
 ```
+
+## Install
+
+```sh
+pi install git:github.com/<owner>/gondolin-rises
+```
+
+## License
+
+[Apache-2.0](LICENSE), matching upstream Gondolin example.
