@@ -1,11 +1,13 @@
 # Spec
 
+## General
 pi extension providing configurable pi sandbox via Gondolin.
 
 Requires Node.js 24 or newer.
 
 Only runtime dependency: Gondolin. pi supplies extension API.
 
+## Feature: Toggle
 Sandbox starts on. `/sandbox` toggles on or off after agent becomes idle.
 
 On: `read`, `write`, `edit`, `bash`, and user `!` commands run inside Gondolin. Model prompt identifies VM workspace.

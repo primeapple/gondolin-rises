@@ -19,10 +19,17 @@ brew install qemu
 ## Install
 
 ```sh
-pi install git:github.com/<owner>/gondolin-rises
+pi install git:github.com/primeapple/gondolin-rises
 ```
 
-## Sandbox toggle
+Or use a local installation via
+```sh
+pi --no-extensions -e /path/to/gondolin-rises
+```
+
+## Features
+
+### Sandbox toggle
 
 Sandbox starts on. Run `/sandbox` inside pi to toggle off or on. Toggle waits for agent to become idle.
 
