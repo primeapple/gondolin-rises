@@ -16,6 +16,12 @@ On macOS:
 brew install qemu
 ```
 
+On arch (x86):
+
+```sh
+pacman -S qemu-img qemu-system-x86
+```
+
 ## Install
 
 ```sh
