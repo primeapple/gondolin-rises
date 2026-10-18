@@ -8,13 +8,14 @@
     "pi-package"
   ],
   "files": [
-    "index.ts",
+    "src/index.ts",
+    "src/config.ts",
     "README.md",
     "LICENSE"
   ],
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./src/index.ts"
     ]
   },
   "scripts": {

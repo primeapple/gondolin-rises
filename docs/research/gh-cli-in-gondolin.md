@@ -58,7 +58,7 @@ For browsing external repositories, adapt the read-only `/git` VFS pattern from 
 
 For `gh` commands from sandboxed `bash`, install `gh` in the guest and add `httpHooks` plus the returned `env` to `VM.create`. Prefer a short-lived GitHub App installation token limited to the needed repositories and permissions, rather than the host's general `gh` token. Gondolin's host allowlist is hostname-based; secret injection does not make a token read-only. Guest code can still use an injected token to perform any GitHub operation that token permits.
 
-Current `index.ts` passes only VFS options to `VM.create`; it does not configure `httpHooks` or secret env. `package-lock.json` pins Gondolin 0.13.0, which includes the documented secret and SSH egress features.
+Current `src/index.ts` passes only VFS options to `VM.create`; it does not configure `httpHooks` or secret env. `package-lock.json` pins Gondolin 0.13.0, which includes the documented secret and SSH egress features.
 
 ## Sources
 

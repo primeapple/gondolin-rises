@@ -34,7 +34,7 @@ e2fsprogs-extra, nodejs, npm, uv, python3, openssh
 For this repository's sandbox, add:
 
 - `git` for normal repository operations; it is not in the built-in list.
-- `file` for `index.ts` image MIME detection. That code returns no MIME type if `file` is missing; the built-in list does not include it.
+- `file` for `src/index.ts` image MIME detection. That code returns no MIME type if `file` is missing; the built-in list does not include it.
 
 Useful optional tools include `ripgrep` and `jq`. Add compiler toolchains such as `build-base` only for tasks that compile native code. Gondolin's own examples add workload-specific sets rather than one large universal image: Chromium packages for browser automation, Docker packages for a Docker guest, and `py3-pip` plus a `postBuild` pip command for an LLM CLI.
 
@@ -63,7 +63,7 @@ If you want Debian/Ubuntu packages, create an OCI image (for example, derive fro
 
 ## Selecting the image in this project
 
-The current [`index.ts`](../../index.ts) calls `VM.create()` with VFS mounts but no `sandbox.imagePath`, so Gondolin resolves its default image unless an environment override is set. Use `GONDOLIN_GUEST_DIR=/path/to/gondolin-assets` before starting Pi to use a built asset directory without changing this extension. For per-instance selection, pass `sandbox: { imagePath: "/path/to/gondolin-assets" }` in `VM.create()`. A tagged image can instead be selected with `GONDOLIN_DEFAULT_IMAGE`.
+The current [`src/index.ts`](../../src/index.ts) calls `VM.create()` with VFS mounts but no `sandbox.imagePath`, so Gondolin resolves its default image unless an environment override is set. Use `GONDOLIN_GUEST_DIR=/path/to/gondolin-assets` before starting Pi to use a built asset directory without changing this extension. For per-instance selection, pass `sandbox: { imagePath: "/path/to/gondolin-assets" }` in `VM.create()`. A tagged image can instead be selected with `GONDOLIN_DEFAULT_IMAGE`.
 
 ## Sources
 

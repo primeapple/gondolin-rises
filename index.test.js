@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mock, test } from "node:test";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { after, mock, test } from "node:test";
+
+const configDir = await mkdtemp(path.join(os.tmpdir(), "gondolin-rises-"));
+const configFile = path.join(configDir, "gondolin-rises.json");
+after(() => rm(configDir, { recursive: true, force: true }));
 
 function tool(name, cwd, options = {}) {
   return {
@@ -19,12 +26,15 @@ let failStart = false;
 const vm = { close: async () => closes++, fs: {} };
 
 mock.module("@earendil-works/pi-coding-agent", {
-  namedExports: Object.fromEntries(
-    ["Read", "Write", "Edit", "Bash"].map((name) => [
-      `create${name}Tool`,
-      (cwd, options) => tool(name.toLowerCase(), cwd, options),
-    ]),
-  ),
+  namedExports: {
+    ...Object.fromEntries(
+      ["Read", "Write", "Edit", "Bash"].map((name) => [
+        `create${name}Tool`,
+        (cwd, options) => tool(name.toLowerCase(), cwd, options),
+      ]),
+    ),
+    getAgentDir: () => configDir,
+  },
 });
 mock.module("@earendil-works/gondolin", {
   namedExports: {
@@ -38,9 +48,9 @@ mock.module("@earendil-works/gondolin", {
     },
   },
 });
-const { default: extension } = await import("./index.ts");
+const { default: extension } = await import("./src/index.ts");
 
-function setup() {
+async function setup() {
   starts = 0;
   closes = 0;
   failStart = false;
@@ -57,7 +67,7 @@ function setup() {
       notify: (text) => notices.push(text),
     },
   };
-  extension({
+  await extension({
     on: (name, handler) => events.set(name, handler),
     registerTool: (definition) => tools.set(definition.name, definition),
     registerCommand: (name, command) => commands.set(name, command),
@@ -91,8 +101,23 @@ async function checkTools(harness, sandboxed) {
   }
 }
 
+test("extension creates version-zero config in Pi config directory", async () => {
+  await rm(configFile, { force: true });
+  await setup();
+  assert.deepEqual(JSON.parse(await readFile(configFile, "utf8")), {
+    version: 0,
+  });
+});
+
+test("extension does not rewrite existing config", async () => {
+  const existing = '{"version":0}\n';
+  await writeFile(configFile, existing);
+  await setup();
+  assert.equal(await readFile(configFile, "utf8"), existing);
+});
+
 test("sandbox defaults on; toggle routes every tool, user bash, and prompt", async () => {
-  const h = setup();
+  const h = await setup();
   await h.emit("session_start");
   await checkTools(h, true);
   assert.ok((await h.emit("user_bash")).operations);
@@ -127,14 +152,14 @@ test("sandbox defaults on; toggle routes every tool, user bash, and prompt", asy
 });
 
 test("user bash starts VM lazily rather than falling through to host", async () => {
-  const h = setup();
+  const h = await setup();
   assert.ok((await h.emit("user_bash")).operations);
   assert.equal(starts, 1);
   await h.emit("session_shutdown");
 });
 
 test("failed startup stays sandboxed, supports off, and retries safely", async () => {
-  const h = setup();
+  const h = await setup();
   failStart = true;
   await assert.rejects(h.emit("session_start"), /VM unavailable/);
   await assert.rejects(h.emit("user_bash"), /VM unavailable/);
@@ -154,7 +179,7 @@ test("failed startup stays sandboxed, supports off, and retries safely", async (
 });
 
 test("toggle waits for idle before changing routing", async () => {
-  const h = setup();
+  const h = await setup();
   await h.emit("session_start");
   const idle = Promise.withResolvers();
   h.ctx.waitForIdle = () => idle.promise;

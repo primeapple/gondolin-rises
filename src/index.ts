@@ -30,6 +30,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import {
+  getAgentDir,
   type BashOperations,
   createBashTool,
   createEditTool,
@@ -41,6 +42,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import { RealFSProvider, VM } from "@earendil-works/gondolin";
+import { loadConfig } from "./config.ts";
 
 const GUEST_WORKSPACE = "/workspace";
 
@@ -161,7 +163,8 @@ function createGondolinBashOps(vm: VM, localCwd: string): BashOperations {
   };
 }
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
+  await loadConfig(getAgentDir());
   const localCwd = process.cwd();
 
   const localRead = createReadTool(localCwd);
