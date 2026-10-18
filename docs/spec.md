@@ -7,6 +7,9 @@ Requires Node.js 24 or newer.
 
 Only runtime dependency: Gondolin. pi supplies extension API.
 
+## Configuration
+Store configuration in `gondolin-rises.json` in pi config directory. Configuration version starts at `0`. Create file if it does not exist.
+
 ## Feature: Toggle
 Sandbox starts on. `/sandbox` toggles on or off after agent becomes idle.
 
