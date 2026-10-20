@@ -4,7 +4,7 @@ import path from "node:path";
 const CONFIG_FILE = "gondolin-rises.json";
 
 export type GondolinRisesConfig = {
-  version: number;
+  version: 0;
   image: { packages: string[] };
 };
 
@@ -15,6 +15,9 @@ function parseConfig(content: string): GondolinRisesConfig {
   }
 
   const stored = value as Record<string, unknown>;
+  if (stored.version !== 0) {
+    throw new Error("gondolin-rises.json: version must be 0");
+  }
   const imageValue = stored.image;
   if (
     imageValue !== undefined &&
@@ -37,9 +40,8 @@ function parseConfig(content: string): GondolinRisesConfig {
   }
 
   return {
-    ...stored,
-    version: stored.version as number,
-    image: { ...image, packages },
+    version: 0,
+    image: { packages },
   };
 }
 
