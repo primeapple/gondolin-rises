@@ -45,7 +45,7 @@ VM stays alive while off, gets reused when on, and closes on session shutdown. F
 
 ### Image packages
 
-Set `image.packages` in `gondolin-rises.json` in Pi's config directory, then restart Pi:
+Set `image.packages` in `gondolin-rises.json` in Pi's config directory:
 
 ```json
 {
@@ -54,7 +54,10 @@ Set `image.packages` in `gondolin-rises.json` in Pi's config directory, then res
 }
 ```
 
-Packages add to Gondolin's default Alpine set. First start builds and caches a guest image under `$XDG_CACHE_HOME/gondolin-rises/images` (default: `~/.cache/gondolin-rises/images`). Later starts reuse it; changing package list or Gondolin version builds a new image. Builds need `mke2fs` from `e2fsprogs` and network access. While packages are configured, this generated image takes precedence over `GONDOLIN_GUEST_DIR` and `GONDOLIN_DEFAULT_IMAGE`.
+Packages add to Gondolin's default Alpine set. Pi startup never builds custom images. It uses the active cached image; if none exists, it uses Gondolin's default image and warns with `pi --update-gondolin-image`. If package settings or Gondolin version changed, startup keeps using the active image and shows the same warning.
+
+Run `pi --update-gondolin-image` from the shell to rebuild the custom image using current settings. This always rebuilds, so it can also pick up newer Alpine packages. Pi switches to the new image only after a successful build; older images remain in `$XDG_CACHE_HOME/gondolin-rises/images` (default: `~/.cache/gondolin-rises/images`). Builds need `mke2fs` from `e2fsprogs` and network access. While packages are configured, the active custom image takes precedence over `GONDOLIN_GUEST_DIR` and `GONDOLIN_DEFAULT_IMAGE`.
+
 
 ## License
 

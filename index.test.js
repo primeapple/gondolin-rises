@@ -34,6 +34,7 @@ let buildConfigs = [];
 let vmOptions = [];
 let gondolinVersion = "v0.13.0";
 let failStart = false;
+let failBuild = false;
 const vm = { close: async () => closes++, fs: {} };
 
 mock.module("@earendil-works/pi-coding-agent", {
@@ -61,6 +62,7 @@ mock.module("@earendil-works/gondolin", {
     buildAssets: async (config, options) => {
       builds++;
       buildConfigs.push(config);
+      if (failBuild) throw new Error("image build failed");
       await mkdir(options.outputDir, { recursive: true });
       await writeFile(path.join(options.outputDir, "built"), "ok");
       await writeFile(
@@ -94,20 +96,23 @@ mock.module("@earendil-works/gondolin", {
 });
 const { default: extension } = await import("./src/index.ts");
 
-async function setup() {
+async function setup(flags = {}) {
   starts = 0;
   closes = 0;
   builds = 0;
   buildConfigs = [];
   vmOptions = [];
   failStart = false;
+  failBuild = false;
   const events = new Map();
   const commands = new Map();
+  const registeredFlags = new Map();
   const tools = new Map();
   const statuses = [];
   const notices = [];
   const ctx = {
     waitForIdle: mock.fn(async () => {}),
+    shutdown: mock.fn(),
     ui: {
       theme: { fg: (_color, text) => text },
       setStatus: (_key, text) => statuses.push(text),
@@ -118,12 +123,15 @@ async function setup() {
     on: (name, handler) => events.set(name, handler),
     registerTool: (definition) => tools.set(definition.name, definition),
     registerCommand: (name, command) => commands.set(name, command),
+    registerFlag: (name, flag) => registeredFlags.set(name, flag),
+    getFlag: (name) => flags[name],
   });
   return {
     ctx,
     tools,
     statuses,
     notices,
+    registeredFlags,
     emit: (name, event = {}) => events.get(name)(event, ctx),
     toggle: () => commands.get("sandbox").handler("", ctx),
   };
@@ -241,14 +249,41 @@ test("toggle waits for idle before changing routing", async () => {
   await h.emit("session_shutdown");
 });
 
-test("configured packages are baked once and reused across Pi starts", async () => {
+test("configured images do not build on startup and warn until manually built", async () => {
+  await rm(path.join(process.env.XDG_CACHE_HOME, "gondolin-rises"), {
+    recursive: true,
+    force: true,
+  });
+  await writeFile(
+    configFile,
+    JSON.stringify({ version: 0, image: { packages: ["git"] } }),
+  );
+
+  const h = await setup();
+  assert.deepEqual(h.registeredFlags.get("update-gondolin-image"), {
+    description: "Rebuild the custom Gondolin image",
+    type: "boolean",
+  });
+  await h.emit("session_start");
+  assert.equal(builds, 0);
+  assert.equal(vmOptions[0].sandbox, undefined);
+  assert.match(h.notices.join("\n"), /pi --update-gondolin-image/);
+  await h.emit("session_shutdown");
+});
+
+test("manual image update installs a pointer and startup reuses it", async () => {
+  await rm(path.join(process.env.XDG_CACHE_HOME, "gondolin-rises"), {
+    recursive: true,
+    force: true,
+  });
+  gondolinVersion = "v0.13.0";
   await writeFile(
     configFile,
     JSON.stringify({ version: 0, image: { packages: ["git", "file"] } }),
   );
 
-  const first = await setup();
-  await first.emit("session_start");
+  const updater = await setup({ "update-gondolin-image": true });
+  await updater.emit("session_start");
   assert.equal(builds, 1);
   assert.deepEqual(buildConfigs[0].alpine.rootfsPackages, [
     "linux-virt",
@@ -256,34 +291,192 @@ test("configured packages are baked once and reused across Pi starts", async () 
     "git",
     "file",
   ]);
-  const imagePath = vmOptions[0].sandbox.imagePath;
-  assert.ok(imagePath);
-  await first.emit("session_shutdown");
+  assert.equal(starts, 0);
+  assert.equal(updater.ctx.shutdown.mock.callCount(), 1);
 
-  const second = await setup();
-  await second.emit("session_start");
+  const imagesDir = path.join(
+    process.env.XDG_CACHE_HOME,
+    "gondolin-rises",
+    "images",
+  );
+  const pointer = JSON.parse(
+    await readFile(path.join(imagesDir, "active.json"), "utf8"),
+  );
+  const imagePath = path.join(imagesDir, pointer.imageKey, pointer.buildId);
+  assert.ok(existsSync(imagePath));
+
+  const next = await setup();
+  await next.emit("session_start");
   assert.equal(builds, 0);
   assert.equal(vmOptions[0].sandbox.imagePath, imagePath);
-  await second.emit("session_shutdown");
+  assert.doesNotMatch(next.notices.join("\n"), /outdated|No custom/i);
+  await next.emit("session_shutdown");
+
+  const refresh = await setup({ "update-gondolin-image": true });
+  await refresh.emit("session_start");
+  assert.equal(builds, 1);
+  const refreshed = JSON.parse(
+    await readFile(path.join(imagesDir, "active.json"), "utf8"),
+  );
+  assert.notEqual(refreshed.buildId, pointer.buildId);
+  assert.ok(existsSync(imagePath));
+});
+
+test("stale image stays active until update succeeds", async () => {
+  await rm(path.join(process.env.XDG_CACHE_HOME, "gondolin-rises"), {
+    recursive: true,
+    force: true,
+  });
+  gondolinVersion = "v0.13.0";
+  await writeFile(
+    configFile,
+    JSON.stringify({ version: 0, image: { packages: ["git"] } }),
+  );
+  await (await setup({ "update-gondolin-image": true })).emit("session_start");
+  const imagesDir = path.join(
+    process.env.XDG_CACHE_HOME,
+    "gondolin-rises",
+    "images",
+  );
+  const firstPointer = JSON.parse(
+    await readFile(path.join(imagesDir, "active.json"), "utf8"),
+  );
+  const firstPath = path.join(
+    imagesDir,
+    firstPointer.imageKey,
+    firstPointer.buildId,
+  );
 
   await writeFile(
     configFile,
+    JSON.stringify({ version: 0, image: { packages: ["ripgrep"] } }),
+  );
+  const stale = await setup();
+  await stale.emit("session_start");
+  assert.equal(builds, 0);
+  assert.equal(vmOptions[0].sandbox.imagePath, firstPath);
+  assert.match(
+    stale.notices.join("\n"),
+    /outdated.*pi --update-gondolin-image/i,
+  );
+  await stale.emit("session_shutdown");
+
+  const staleAgain = await setup();
+  await staleAgain.emit("session_start");
+  assert.match(staleAgain.notices.join("\n"), /outdated/);
+  await staleAgain.emit("session_shutdown");
+
+  const updater = await setup({ "update-gondolin-image": true });
+  await updater.emit("session_start");
+  assert.equal(builds, 1);
+  const nextPointer = JSON.parse(
+    await readFile(path.join(imagesDir, "active.json"), "utf8"),
+  );
+  assert.notEqual(nextPointer.buildId, firstPointer.buildId);
+  assert.ok(existsSync(firstPath));
+});
+
+test("failed image update leaves active pointer unchanged", async () => {
+  await rm(path.join(process.env.XDG_CACHE_HOME, "gondolin-rises"), {
+    recursive: true,
+    force: true,
+  });
+  await writeFile(
+    configFile,
+    JSON.stringify({ version: 0, image: { packages: ["git"] } }),
+  );
+  await (await setup({ "update-gondolin-image": true })).emit("session_start");
+  const pointerPath = path.join(
+    process.env.XDG_CACHE_HOME,
+    "gondolin-rises",
+    "images",
+    "active.json",
+  );
+  const activeBefore = await readFile(pointerPath, "utf8");
+  const originalExitCode = process.exitCode;
+
+  try {
+    const updater = await setup({ "update-gondolin-image": true });
+    failBuild = true;
+    await updater.emit("session_start");
+    assert.equal(updater.ctx.shutdown.mock.callCount(), 1);
+    assert.equal(await readFile(pointerPath, "utf8"), activeBefore);
+    assert.equal(process.exitCode, 1);
+  } finally {
+    failBuild = false;
+    process.exitCode = originalExitCode;
+  }
+});
+
+test("legacy cached image becomes active pointer without startup rebuild", async () => {
+  await rm(path.join(process.env.XDG_CACHE_HOME, "gondolin-rises"), {
+    recursive: true,
+    force: true,
+  });
+  await writeFile(
+    configFile,
+    JSON.stringify({ version: 0, image: { packages: ["git"] } }),
+  );
+  const imagesDir = path.join(
+    process.env.XDG_CACHE_HOME,
+    "gondolin-rises",
+    "images",
+  );
+  const imageKey = "a".repeat(64);
+  const imagePath = path.join(imagesDir, imageKey);
+  await mkdir(imagePath, { recursive: true });
+  await writeFile(path.join(imagePath, "built"), "ok");
+  await writeFile(
+    path.join(imagePath, "manifest.json"),
     JSON.stringify({
-      version: 0,
-      image: { packages: ["git", "file", "ripgrep"] },
+      config: {
+        arch: "x86_64",
+        distro: "alpine",
+        alpine: { rootfsPackages: ["linux-virt", "bash", "git"] },
+      },
     }),
   );
-  const changedPackages = await setup();
-  await changedPackages.emit("session_start");
-  assert.equal(builds, 1);
-  const changedImagePath = vmOptions[0].sandbox.imagePath;
-  assert.notEqual(changedImagePath, imagePath);
-  await changedPackages.emit("session_shutdown");
+
+  const startup = await setup();
+  await startup.emit("session_start");
+  assert.equal(builds, 0);
+  assert.equal(vmOptions[0].sandbox.imagePath, imagePath);
+  assert.match(startup.notices.join("\n"), /outdated/);
+  const pointer = JSON.parse(
+    await readFile(path.join(imagesDir, "active.json"), "utf8"),
+  );
+  assert.equal(pointer.imageKey, imageKey);
+  assert.equal(pointer.assetVersion, null);
+  await startup.emit("session_shutdown");
+});
+
+test("Gondolin version change warns and keeps active custom image", async () => {
+  await rm(path.join(process.env.XDG_CACHE_HOME, "gondolin-rises"), {
+    recursive: true,
+    force: true,
+  });
+  gondolinVersion = "v0.13.0";
+  await writeFile(
+    configFile,
+    JSON.stringify({ version: 0, image: { packages: ["git"] } }),
+  );
+  await (await setup({ "update-gondolin-image": true })).emit("session_start");
+  const imagesDir = path.join(
+    process.env.XDG_CACHE_HOME,
+    "gondolin-rises",
+    "images",
+  );
+  const pointer = JSON.parse(
+    await readFile(path.join(imagesDir, "active.json"), "utf8"),
+  );
+  const imagePath = path.join(imagesDir, pointer.imageKey, pointer.buildId);
 
   gondolinVersion = "v0.14.0";
-  const changedVersion = await setup();
-  await changedVersion.emit("session_start");
-  assert.equal(builds, 1);
-  assert.notEqual(vmOptions[0].sandbox.imagePath, changedImagePath);
-  await changedVersion.emit("session_shutdown");
+  const h = await setup();
+  await h.emit("session_start");
+  assert.equal(builds, 0);
+  assert.equal(vmOptions[0].sandbox.imagePath, imagePath);
+  assert.match(h.notices.join("\n"), /outdated/);
+  await h.emit("session_shutdown");
+  gondolinVersion = "v0.13.0";
 });

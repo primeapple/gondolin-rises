@@ -22,9 +22,17 @@
  *     gondolin repo (or installing `@earendil-works/gondolin` next to it) is easiest
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -62,7 +70,145 @@ function shQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-async function ensurePackageImage(packages: string[]): Promise<string> {
+type CachedImagePointer = {
+  imageKey: string;
+  buildId?: string;
+  assetVersion: string | null;
+  config: unknown;
+};
+
+function imagePath(imagesDir: string, pointer: CachedImagePointer): string {
+  return path.join(
+    imagesDir,
+    pointer.imageKey,
+    ...(pointer.buildId ? [pointer.buildId] : []),
+  );
+}
+
+function isBuildConfig(value: unknown): boolean {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCachedImagePointer(value: unknown): value is CachedImagePointer {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const pointer = value as Record<string, unknown>;
+  return (
+    typeof pointer.imageKey === "string" &&
+    /^[a-f0-9]{64}$/.test(pointer.imageKey) &&
+    (pointer.buildId === undefined ||
+      (typeof pointer.buildId === "string" &&
+        /^[a-f0-9-]+$/.test(pointer.buildId))) &&
+    (typeof pointer.assetVersion === "string" ||
+      pointer.assetVersion === null) &&
+    isBuildConfig(pointer.config)
+  );
+}
+
+function readImageConfig(dir: string): unknown | null {
+  try {
+    const manifest = loadAssetManifest(dir);
+    if (!manifest || !isBuildConfig(manifest.config)) return null;
+    loadGuestAssets(dir);
+    return manifest.config;
+  } catch {
+    return null;
+  }
+}
+
+async function readImagePointer(
+  imagesDir: string,
+): Promise<CachedImagePointer | null> {
+  try {
+    const value = JSON.parse(
+      await readFile(path.join(imagesDir, "active.json"), "utf8"),
+    );
+    if (!isCachedImagePointer(value)) return null;
+    const config = readImageConfig(imagePath(imagesDir, value));
+    if (
+      config === null ||
+      JSON.stringify(config) !== JSON.stringify(value.config)
+    ) {
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+async function writeImagePointer(
+  imagesDir: string,
+  pointer: CachedImagePointer,
+): Promise<void> {
+  await mkdir(imagesDir, { recursive: true });
+  const pointerPath = path.join(imagesDir, "active.json");
+  const tempPath = path.join(imagesDir, `.active-${randomUUID()}.tmp`);
+  try {
+    await writeFile(tempPath, `${JSON.stringify(pointer)}\n`, { flag: "wx" });
+    await rename(tempPath, pointerPath);
+  } catch (error) {
+    await unlink(tempPath).catch(() => {});
+    throw error;
+  }
+}
+
+async function findNewestCachedImage(
+  imagesDir: string,
+): Promise<CachedImagePointer | null> {
+  const entries = await readdir(imagesDir, { withFileTypes: true }).catch(
+    () => null,
+  );
+  if (!entries) return null;
+
+  const candidates: Array<{
+    pointer: CachedImagePointer;
+    dir: string;
+    modified: number;
+  }> = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) continue;
+    const imageKey = entry.name;
+    const keyDir = path.join(imagesDir, imageKey);
+    const addCandidate = async (dir: string, buildId?: string) => {
+      try {
+        candidates.push({
+          pointer: {
+            imageKey,
+            ...(buildId ? { buildId } : {}),
+            assetVersion: null,
+            config: null,
+          },
+          dir,
+          modified: (await stat(dir)).mtimeMs,
+        });
+      } catch {
+        // Ignore cache entries removed during discovery.
+      }
+    };
+
+    await addCandidate(keyDir);
+    try {
+      for (const child of await readdir(keyDir, { withFileTypes: true })) {
+        if (child.isDirectory() && /^[a-f0-9-]+$/.test(child.name)) {
+          await addCandidate(path.join(keyDir, child.name), child.name);
+        }
+      }
+    } catch {
+      // A legacy cache entry may not contain child builds.
+    }
+  }
+
+  candidates.sort((a, b) => b.modified - a.modified);
+  for (const candidate of candidates) {
+    const config = readImageConfig(candidate.dir);
+    if (config !== null) return { ...candidate.pointer, config };
+  }
+  return null;
+}
+
+function createBuildConfig(packages: string[]) {
   const buildConfig = getDefaultBuildConfig();
   buildConfig.alpine = {
     ...buildConfig.alpine,
@@ -70,34 +216,76 @@ async function ensurePackageImage(packages: string[]): Promise<string> {
       ...new Set([...(buildConfig.alpine?.rootfsPackages ?? []), ...packages]),
     ],
   };
+  return buildConfig;
+}
 
-  const cacheKey = createHash("sha256")
-    .update(`${getAssetVersion()}\0${JSON.stringify(buildConfig)}`)
-    .digest("hex");
+function getImageCacheDir(): string {
   const cacheRoot =
     process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
-  const outputDir = path.resolve(
-    cacheRoot,
-    "gondolin-rises",
-    "images",
-    cacheKey,
-  );
-  const manifest = loadAssetManifest(outputDir);
-  if (
-    manifest &&
-    JSON.stringify(manifest.config) === JSON.stringify(buildConfig)
-  ) {
-    try {
-      loadGuestAssets(outputDir);
-      return outputDir;
-    } catch {
-      // Rebuild incomplete cache entries.
-    }
-  }
+  return path.resolve(cacheRoot, "gondolin-rises", "images");
+}
+
+function getImageKey(assetVersion: string, buildConfig: unknown): string {
+  return createHash("sha256")
+    .update(`${assetVersion}\0${JSON.stringify(buildConfig)}`)
+    .digest("hex");
+}
+
+async function rebuildPackageImage(packages: string[]): Promise<string> {
+  const buildConfig = createBuildConfig(packages);
+  const assetVersion = getAssetVersion();
+  const imageKey = getImageKey(assetVersion, buildConfig);
+  const imagesDir = getImageCacheDir();
+  const buildId = randomUUID();
+  const outputDir = path.join(imagesDir, imageKey, buildId);
 
   await mkdir(path.dirname(outputDir), { recursive: true });
   await buildAssets(buildConfig, { outputDir });
+  const config = readImageConfig(outputDir);
+  if (
+    config === null ||
+    JSON.stringify(config) !== JSON.stringify(buildConfig)
+  ) {
+    throw new Error("Gondolin image build produced an incomplete cache entry");
+  }
+  const pointer = { imageKey, buildId, assetVersion, config };
+  await writeImagePointer(imagesDir, pointer);
   return outputDir;
+}
+
+async function getStartupImage(
+  packages: string[],
+  notify: (message: string) => void,
+): Promise<string | undefined> {
+  if (packages.length === 0) return undefined;
+
+  const buildConfig = createBuildConfig(packages);
+  const assetVersion = getAssetVersion();
+  const imagesDir = getImageCacheDir();
+  let pointer = await readImagePointer(imagesDir);
+  if (!pointer) {
+    pointer = await findNewestCachedImage(imagesDir);
+    if (pointer) {
+      await writeImagePointer(imagesDir, pointer).catch(() => {});
+    }
+  }
+
+  if (!pointer) {
+    notify(
+      "No custom Gondolin image cached. Run `pi --update-gondolin-image` to build one.",
+    );
+    return undefined;
+  }
+
+  if (
+    pointer.assetVersion !== assetVersion ||
+    JSON.stringify(pointer.config) !== JSON.stringify(buildConfig)
+  ) {
+    notify(
+      "Custom Gondolin image is outdated. Run `pi --update-gondolin-image` to rebuild it.",
+    );
+  }
+  return imagePath(imagesDir, pointer);
 }
 
 function toGuestPath(localCwd: string, localPath: string): string {
@@ -221,9 +409,15 @@ export default async function (pi: ExtensionAPI) {
   const localEdit = createEditTool(localCwd);
   const localBash = createBashTool(localCwd);
 
+  pi.registerFlag("update-gondolin-image", {
+    description: "Rebuild the custom Gondolin image",
+    type: "boolean",
+  });
+
   let sandboxEnabled = true;
   let vm: VM | null = null;
   let vmStarting: Promise<VM> | null = null;
+  let imageWarningShown = false;
 
   async function ensureVm(ctx?: ExtensionContext) {
     if (vm) return vm;
@@ -238,9 +432,14 @@ export default async function (pi: ExtensionAPI) {
         ),
       );
 
-      const imagePath = config.image.packages.length
-        ? await ensurePackageImage(config.image.packages)
-        : undefined;
+      const imagePath = await getStartupImage(
+        config.image.packages,
+        (message) => {
+          if (imageWarningShown) return;
+          imageWarningShown = true;
+          ctx?.ui.notify(message, "warning");
+        },
+      );
       const created = await VM.create({
         ...(imagePath ? { sandbox: { imagePath } } : {}),
         vfs: {
@@ -290,6 +489,25 @@ export default async function (pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    if (pi.getFlag("update-gondolin-image") === true) {
+      try {
+        if (config.image.packages.length === 0) {
+          console.log("No custom image packages configured; nothing to build.");
+        } else {
+          const imagePath = await rebuildPackageImage(config.image.packages);
+          console.log(`Updated custom Gondolin image: ${imagePath}`);
+        }
+      } catch (error) {
+        process.exitCode = 1;
+        console.error(
+          `Failed to update custom Gondolin image: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        ctx.shutdown();
+      }
+      return;
+    }
+
     // Start eagerly so the user sees errors early (missing qemu, etc.)
     if (sandboxEnabled) await ensureVm(ctx);
   });
