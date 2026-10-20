@@ -9,7 +9,10 @@ Only runtime dependency: Gondolin. pi supplies extension API.
 
 ## Configuration
 Store configuration in `gondolin-rises.json` in pi config directory. Configuration version starts at `0`. Create file if it does not exist.
-- `image.packages` lists extra Alpine packages. Bake them into a cached guest image; reuse across Pi starts and rebuild when package list or Gondolin version changes.
+- `image.packages` lists extra Alpine packages for a cached custom guest image.
+- Pi startup never builds custom images. Use active image from cache pointer; if none exists, use Gondolin default image and warn with update command. If active custom image does not match current package list or Gondolin version, keep using it and warn on every startup with update command.
+- `pi --update-gondolin-image` always rebuilds custom image from current config, including when config matches active image. Switch cache pointer only after successful build; keep older cached images.
+
 
 ## Feature: Toggle
 Sandbox starts on. `/sandbox` toggles on or off after agent becomes idle.
