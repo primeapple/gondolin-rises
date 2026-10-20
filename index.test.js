@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, mock, test } from "node:test";
 
 const configDir = await mkdtemp(path.join(os.tmpdir(), "gondolin-rises-"));
 const configFile = path.join(configDir, "gondolin-rises.json");
-after(() => rm(configDir, { recursive: true, force: true }));
+const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
+process.env.XDG_CACHE_HOME = path.join(configDir, "cache");
+after(async () => {
+  await rm(configDir, { recursive: true, force: true });
+  if (originalXdgCacheHome === undefined) delete process.env.XDG_CACHE_HOME;
+  else process.env.XDG_CACHE_HOME = originalXdgCacheHome;
+});
 
 function tool(name, cwd, options = {}) {
   return {
@@ -22,6 +29,10 @@ function tool(name, cwd, options = {}) {
 
 let starts = 0;
 let closes = 0;
+let builds = 0;
+let buildConfigs = [];
+let vmOptions = [];
+let gondolinVersion = "v0.13.0";
 let failStart = false;
 const vm = { close: async () => closes++, fs: {} };
 
@@ -40,12 +51,45 @@ mock.module("@earendil-works/gondolin", {
   namedExports: {
     RealFSProvider: class {},
     VM: {
-      create: async () => {
+      create: async (options) => {
         starts++;
+        vmOptions.push(options);
         if (failStart) throw new Error("VM unavailable");
         return vm;
       },
     },
+    buildAssets: async (config, options) => {
+      builds++;
+      buildConfigs.push(config);
+      await mkdir(options.outputDir, { recursive: true });
+      await writeFile(path.join(options.outputDir, "built"), "ok");
+      await writeFile(
+        path.join(options.outputDir, "manifest.json"),
+        JSON.stringify({ config }),
+      );
+      return { outputDir: options.outputDir };
+    },
+    loadAssetManifest: (dir) => {
+      try {
+        return JSON.parse(
+          readFileSync(path.join(dir, "manifest.json"), "utf8"),
+        );
+      } catch {
+        return null;
+      }
+    },
+    loadGuestAssets: (dir) => {
+      if (!existsSync(path.join(dir, "built"))) {
+        throw new Error("incomplete guest image");
+      }
+      return {};
+    },
+    getAssetVersion: () => gondolinVersion,
+    getDefaultBuildConfig: () => ({
+      arch: "x86_64",
+      distro: "alpine",
+      alpine: { rootfsPackages: ["linux-virt", "bash"] },
+    }),
   },
 });
 const { default: extension } = await import("./src/index.ts");
@@ -53,6 +97,9 @@ const { default: extension } = await import("./src/index.ts");
 async function setup() {
   starts = 0;
   closes = 0;
+  builds = 0;
+  buildConfigs = [];
+  vmOptions = [];
   failStart = false;
   const events = new Map();
   const commands = new Map();
@@ -106,6 +153,7 @@ test("extension creates version-zero config in Pi config directory", async () =>
   await setup();
   assert.deepEqual(JSON.parse(await readFile(configFile, "utf8")), {
     version: 0,
+    image: { packages: [] },
   });
 });
 
@@ -119,6 +167,8 @@ test("extension does not rewrite existing config", async () => {
 test("sandbox defaults on; toggle routes every tool, user bash, and prompt", async () => {
   const h = await setup();
   await h.emit("session_start");
+  assert.equal(builds, 0);
+  assert.equal(vmOptions[0].sandbox, undefined);
   await checkTools(h, true);
   assert.ok((await h.emit("user_bash")).operations);
   assert.match(
@@ -189,4 +239,51 @@ test("toggle waits for idle before changing routing", async () => {
   await toggling;
   await checkTools(h, false);
   await h.emit("session_shutdown");
+});
+
+test("configured packages are baked once and reused across Pi starts", async () => {
+  await writeFile(
+    configFile,
+    JSON.stringify({ version: 0, image: { packages: ["git", "file"] } }),
+  );
+
+  const first = await setup();
+  await first.emit("session_start");
+  assert.equal(builds, 1);
+  assert.deepEqual(buildConfigs[0].alpine.rootfsPackages, [
+    "linux-virt",
+    "bash",
+    "git",
+    "file",
+  ]);
+  const imagePath = vmOptions[0].sandbox.imagePath;
+  assert.ok(imagePath);
+  await first.emit("session_shutdown");
+
+  const second = await setup();
+  await second.emit("session_start");
+  assert.equal(builds, 0);
+  assert.equal(vmOptions[0].sandbox.imagePath, imagePath);
+  await second.emit("session_shutdown");
+
+  await writeFile(
+    configFile,
+    JSON.stringify({
+      version: 0,
+      image: { packages: ["git", "file", "ripgrep"] },
+    }),
+  );
+  const changedPackages = await setup();
+  await changedPackages.emit("session_start");
+  assert.equal(builds, 1);
+  const changedImagePath = vmOptions[0].sandbox.imagePath;
+  assert.notEqual(changedImagePath, imagePath);
+  await changedPackages.emit("session_shutdown");
+
+  gondolinVersion = "v0.14.0";
+  const changedVersion = await setup();
+  await changedVersion.emit("session_start");
+  assert.equal(builds, 1);
+  assert.notEqual(vmOptions[0].sandbox.imagePath, changedImagePath);
+  await changedVersion.emit("session_shutdown");
 });

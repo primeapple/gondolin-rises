@@ -22,7 +22,10 @@
  *     gondolin repo (or installing `@earendil-works/gondolin` next to it) is easiest
  */
 
+import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import type {
@@ -41,7 +44,15 @@ import {
   type WriteOperations,
 } from "@earendil-works/pi-coding-agent";
 
-import { RealFSProvider, VM } from "@earendil-works/gondolin";
+import {
+  buildAssets,
+  getAssetVersion,
+  getDefaultBuildConfig,
+  loadAssetManifest,
+  loadGuestAssets,
+  RealFSProvider,
+  VM,
+} from "@earendil-works/gondolin";
 import { loadConfig } from "./config.ts";
 
 const GUEST_WORKSPACE = "/workspace";
@@ -49,6 +60,44 @@ const GUEST_WORKSPACE = "/workspace";
 function shQuote(value: string): string {
   // POSIX shell quoting: wraps in single quotes and escapes internal quotes
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+async function ensurePackageImage(packages: string[]): Promise<string> {
+  const buildConfig = getDefaultBuildConfig();
+  buildConfig.alpine = {
+    ...buildConfig.alpine,
+    rootfsPackages: [
+      ...new Set([...(buildConfig.alpine?.rootfsPackages ?? []), ...packages]),
+    ],
+  };
+
+  const cacheKey = createHash("sha256")
+    .update(`${getAssetVersion()}\0${JSON.stringify(buildConfig)}`)
+    .digest("hex");
+  const cacheRoot =
+    process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
+  const outputDir = path.resolve(
+    cacheRoot,
+    "gondolin-rises",
+    "images",
+    cacheKey,
+  );
+  const manifest = loadAssetManifest(outputDir);
+  if (
+    manifest &&
+    JSON.stringify(manifest.config) === JSON.stringify(buildConfig)
+  ) {
+    try {
+      loadGuestAssets(outputDir);
+      return outputDir;
+    } catch {
+      // Rebuild incomplete cache entries.
+    }
+  }
+
+  await mkdir(path.dirname(outputDir), { recursive: true });
+  await buildAssets(buildConfig, { outputDir });
+  return outputDir;
 }
 
 function toGuestPath(localCwd: string, localPath: string): string {
@@ -164,7 +213,7 @@ function createGondolinBashOps(vm: VM, localCwd: string): BashOperations {
 }
 
 export default async function (pi: ExtensionAPI) {
-  await loadConfig(getAgentDir());
+  const config = await loadConfig(getAgentDir());
   const localCwd = process.cwd();
 
   const localRead = createReadTool(localCwd);
@@ -189,7 +238,11 @@ export default async function (pi: ExtensionAPI) {
         ),
       );
 
+      const imagePath = config.image.packages.length
+        ? await ensurePackageImage(config.image.packages)
+        : undefined;
       const created = await VM.create({
+        ...(imagePath ? { sandbox: { imagePath } } : {}),
         vfs: {
           mounts: {
             [GUEST_WORKSPACE]: new RealFSProvider(localCwd),

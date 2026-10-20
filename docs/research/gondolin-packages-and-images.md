@@ -63,7 +63,7 @@ If you want Debian/Ubuntu packages, create an OCI image (for example, derive fro
 
 ## Selecting the image in this project
 
-The current [`src/index.ts`](../../src/index.ts) calls `VM.create()` with VFS mounts but no `sandbox.imagePath`, so Gondolin resolves its default image unless an environment override is set. Use `GONDOLIN_GUEST_DIR=/path/to/gondolin-assets` before starting Pi to use a built asset directory without changing this extension. For per-instance selection, pass `sandbox: { imagePath: "/path/to/gondolin-assets" }` in `VM.create()`. A tagged image can instead be selected with `GONDOLIN_DEFAULT_IMAGE`.
+When `image.packages` is non-empty, [`src/index.ts`](../../src/index.ts) adds those packages to Gondolin's default Alpine build config, builds guest assets into `$XDG_CACHE_HOME/gondolin-rises/images` (default `~/.cache/gondolin-rises/images`), then passes that directory as `sandbox.imagePath`. The cache key includes the build config and Gondolin version, so Pi starts reuse assets until either changes. This explicit `imagePath` takes precedence over `GONDOLIN_GUEST_DIR` and `GONDOLIN_DEFAULT_IMAGE`. With an empty package list, Gondolin resolves its default image and honors those environment overrides.
 
 ## Sources
 
