@@ -5,7 +5,8 @@ import type {
   ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { delimiter } from "node:path";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, mock } from "node:test";
@@ -45,8 +46,17 @@ export const state: FixtureState = {
 };
 
 const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
+const originalPath = process.env.PATH;
 beforeEach(async () => {
   state.configDir = await mkdtemp(path.join(os.tmpdir(), "gondolin-rises-"));
+  const fakeBin = path.join(state.configDir, "bin");
+  await mkdir(fakeBin);
+  for (const command of ["mke2fs", "qemu-system-x86_64", "qemu-img"]) {
+    const executable = path.join(fakeBin, command);
+    await writeFile(executable, "#!/bin/sh\nexit 0\n");
+    await chmod(executable, 0o755);
+  }
+  process.env.PATH = `${fakeBin}${delimiter}${originalPath ?? ""}`;
   state.configFile = path.join(state.configDir, "gondolin-rises.json");
   state.cacheHome = path.join(state.configDir, "cache");
   process.env.XDG_CACHE_HOME = state.cacheHome;
@@ -66,6 +76,8 @@ afterEach(async () => {
   await rm(state.configDir, { recursive: true, force: true });
   if (originalXdgCacheHome === undefined) delete process.env.XDG_CACHE_HOME;
   else process.env.XDG_CACHE_HOME = originalXdgCacheHome;
+  if (originalPath === undefined) delete process.env.PATH;
+  else process.env.PATH = originalPath;
 });
 
 type ToolOptions = { operations?: object };

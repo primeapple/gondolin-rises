@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkTools, prompt, setup, state } from "./test-fixtures.ts";
 
+async function waitForVmStart() {
+  for (let attempt = 0; attempt < 20 && state.starts === 0; attempt++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(state.starts, 1);
+}
+
 test("user bash starts VM lazily rather than falling through to host", async () => {
   const h = await setup();
   assert.ok((await h.emit("user_bash"))?.operations);
@@ -36,8 +43,7 @@ test("shutdown waits for pending startup and closes it without publishing", asyn
   state.startBarrier = Promise.withResolvers<void>();
   const starting = h.emit("session_start");
   const rejected = assert.rejects(starting, /shut down/);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(state.starts, 1);
+  await waitForVmStart();
   const closing = h.emit("session_shutdown");
   state.startBarrier.resolve();
   await Promise.all([closing, rejected]);
@@ -54,8 +60,7 @@ test("concurrent startup shares one VM", async () => {
     h.emit("user_bash"),
     h.emit("before_agent_start", prompt),
   ];
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(state.starts, 1);
+  await waitForVmStart();
   state.startBarrier.resolve();
   await Promise.all(calls);
   await h.emit("session_shutdown");

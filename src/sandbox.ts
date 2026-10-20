@@ -1,5 +1,10 @@
-import { RealFSProvider, VM } from "@earendil-works/gondolin";
+import {
+  RealFSProvider,
+  VM,
+  getDefaultBuildConfig,
+} from "@earendil-works/gondolin";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { assertHostDependencies } from "./dependencies.ts";
 import { getStartupImage } from "./images.ts";
 import { GUEST_WORKSPACE } from "./operations.ts";
 
@@ -23,6 +28,17 @@ export function createSandbox(localCwd: string, packages: string[]) {
           `Gondolin: starting (mount ${GUEST_WORKSPACE})`,
         ),
       );
+
+      try {
+        await assertHostDependencies({
+          arch: getDefaultBuildConfig().arch,
+          vmm: process.env.GONDOLIN_VMM,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx?.ui.notify(message, "error");
+        throw error;
+      }
 
       const imagePath = await getStartupImage(packages, (message) => {
         if (imageWarningShown) return;

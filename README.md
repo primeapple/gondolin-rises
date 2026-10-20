@@ -8,19 +8,29 @@ Based on upstream [pi-gondolin.ts example](https://github.com/earendil-works/gon
 
 - Node.js 24 or newer.
 - pi installed, with `pi` on `PATH`.
-- QEMU installed. See [Gondolin Quick Start](https://github.com/earendil-works/gondolin#cli-quick-start) for platform setup.
+- QEMU system emulator matching guest architecture for the default `qemu` backend.
+- `qemu-img` for the default copy-on-write root disk.
+- Custom image builds need `mke2fs` from `e2fsprogs`.
 
 On macOS:
 
 ```sh
-brew install qemu
+brew install qemu e2fsprogs
+```
+
+On Debian/Ubuntu (ARM64 example):
+
+```sh
+sudo apt install qemu-system-arm qemu-utils e2fsprogs
 ```
 
 On arch (x86):
 
 ```sh
-pacman -S qemu-img qemu-system-x86
+pacman -S qemu-img qemu-system-x86 e2fsprogs
 ```
+
+Pi checks host tools before VM startup and custom image builds, and lists missing dependencies with install hints. `GONDOLIN_VMM=krun` skips the QEMU system emulator check.
 
 ## Install
 

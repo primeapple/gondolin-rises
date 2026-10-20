@@ -19,6 +19,41 @@ test("extension does not rewrite existing config", async () => {
   assert.equal(await readFile(state.configFile, "utf8"), existing);
 });
 
+test("startup reports missing runtime dependencies without starting VM", async () => {
+  const originalPath = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    const h = await setup();
+    await assert.rejects(h.emit("session_start"), /qemu-system-x86_64/);
+    assert.equal(state.starts, 0);
+    assert.match(h.notices.join("\n"), /qemu-system-x86_64.*qemu-img/s);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+  }
+});
+
+test("image update skips build and reports missing prerequisites", async () => {
+  await writeFile(
+    state.configFile,
+    JSON.stringify({ version: 0, image: { packages: ["git"] } }),
+  );
+  const originalPath = process.env.PATH;
+  const originalExitCode = process.exitCode;
+  process.env.PATH = "";
+  try {
+    const h = await setup({ "update-gondolin-image": true });
+    await h.emit("session_start");
+    assert.equal(state.builds, 0);
+    assert.equal(h.ctx.shutdown.mock.callCount(), 1);
+    assert.equal(process.exitCode, 1);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    process.exitCode = originalExitCode;
+  }
+});
+
 test("sandbox defaults on; toggle routes every tool, user bash, and prompt", async () => {
   const h = await setup();
   await h.emit("session_start");

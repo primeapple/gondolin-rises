@@ -7,6 +7,8 @@ import {
   createReadTool,
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
+import { getDefaultBuildConfig } from "@earendil-works/gondolin";
+import { assertHostDependencies } from "./dependencies.ts";
 import { loadConfig } from "./config.ts";
 import { rebuildPackageImage } from "./images.ts";
 import {
@@ -58,6 +60,11 @@ export default async function (pi: ExtensionAPI) {
         if (config.image.packages.length === 0) {
           console.log("No custom image packages configured; nothing to build.");
         } else {
+          await assertHostDependencies({
+            buildImage: true,
+            arch: getDefaultBuildConfig().arch,
+            vmm: process.env.GONDOLIN_VMM,
+          });
           const imagePath = await rebuildPackageImage(config.image.packages);
           console.log(`Updated custom Gondolin image: ${imagePath}`);
         }
