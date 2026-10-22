@@ -62,7 +62,7 @@ Optional `gondolin-build-config.json` in Pi's agent config directory (default: `
 ```sh
 # Adjust destination if PI_CODING_AGENT_DIR is set.
 npx gondolin build --init-config > ~/.pi/agent/gondolin-build-config.json
-pi --update-gondolin-image
+pi --update-gondolin-image --print
 ```
 
 Extension never creates or rewrites config. Relative paths resolve against config file directory. Gondolin supplies defaults and validation; `alpine.rootfsPackages` replaces package list rather than adding to it. Legacy cache entries stay untouched.
@@ -74,9 +74,9 @@ Pi startup never builds images or repairs cache:
 - Invalid or unreadable config: warning; use valid old image if available, otherwise default.
 - Broken image or cache pointer: error; use default, leave cache untouched.
 
-Missing or stale custom image warns: "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image` to rebuild it."
+Missing or stale custom image warns: "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image --print` to rebuild it."
 
-`pi --update-gondolin-image` always rebuilds valid config, even when unchanged. Missing config does nothing; invalid config fails update. Any live Gondolin session blocks rebuild, including unrelated sessions and VMs retained while `/sandbox` is off. Close sessions before updating. Session check uses Gondolin `listSessions()`; no usage tracking or locking.
+`pi --update-gondolin-image --print` always rebuilds valid config, even when unchanged. Missing config does nothing; invalid config fails update. Any live Gondolin session blocks rebuild, including unrelated sessions and VMs retained while `/sandbox` is off. Close sessions before updating. Session check uses Gondolin `listSessions()`; no usage tracking or locking.
 
 Cache: `$XDG_CACHE_HOME/gondolin-rises/images` (default: `~/.cache/gondolin-rises/images`). Build and validate replacement before switching active pointer; remove replaced image afterward. Failed builds retain old image and remove failed build output. Only one completed custom image remains after successful rebuild, excluding untouched legacy cache entries. Valid active custom image takes precedence over `GONDOLIN_GUEST_DIR` and `GONDOLIN_DEFAULT_IMAGE`. Removing config selects default but leaves cache untouched.
 

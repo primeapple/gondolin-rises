@@ -175,7 +175,7 @@ export async function getStartupImage(
   } catch (error) {
     notify(
       `Cannot load active Gondolin image at ${path.join(imagesDir, "active.json")}. Run ` +
-        "`pi --update-gondolin-image` to rebuild it. " +
+        "`pi --update-gondolin-image --print` to rebuild it. " +
         (error instanceof Error ? error.message : String(error)),
       "error",
     );
@@ -185,7 +185,7 @@ export async function getStartupImage(
   if (!pointer) {
     if (buildConfig)
       notify(
-        "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image` to rebuild it.",
+        "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image --print` to rebuild it.",
         "warning",
       );
     return undefined;
@@ -197,7 +197,7 @@ export async function getStartupImage(
       !isDeepStrictEqual(pointer.sourceConfig ?? pointer.config, buildConfig))
   ) {
     notify(
-      "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image` to rebuild it.",
+      "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image --print` to rebuild it.",
       "warning",
     );
   }

@@ -74,7 +74,7 @@ export default async function (pi: ExtensionAPI) {
           // ponytail: one session check; VM starts after check may race rebuild.
           if ((await listSessions()).some((session) => session.alive)) {
             throw new Error(
-              "Gondolin sessions are active. Close all Gondolin sessions, then run `pi --update-gondolin-image` again.",
+              "Gondolin sessions are active. Close all Gondolin sessions, then run `pi --update-gondolin-image --print` again.",
             );
           }
           await assertHostDependencies({

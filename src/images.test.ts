@@ -21,7 +21,7 @@ test("configured images do not build on startup and warn until manually built", 
   assert.equal(state.vmOptions[0].sandbox, undefined);
   assert.ok(
     h.notices.includes(
-      "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image` to rebuild it.",
+      "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image --print` to rebuild it.",
     ),
   );
   await h.emit("session_shutdown");
@@ -107,7 +107,7 @@ test("stale image stays active until update succeeds", async () => {
   assert.equal(state.vmOptions[0].sandbox?.imagePath, firstPath);
   assert.match(
     stale.notices.join("\n"),
-    /outdated.*pi --update-gondolin-image/i,
+    /outdated.*pi --update-gondolin-image --print/i,
   );
   await stale.emit("session_shutdown");
 
@@ -196,7 +196,7 @@ test("startup leaves unpointed legacy images untouched", async () => {
   assert.equal(state.vmOptions[0].sandbox, undefined);
   assert.match(
     startup.notices.join("\n"),
-    /outdated.*pi --update-gondolin-image/,
+    /outdated.*pi --update-gondolin-image --print/,
   );
   assert.equal(existsSync(path.join(imagesDir, "active.json")), false);
   assert.ok(existsSync(imagePath));
@@ -247,7 +247,7 @@ test("invalid active pointer reports error and falls back without cache repair",
   await h.emit("session_start");
   assert.match(
     h.notices.join("\n"),
-    /active Gondolin image.*pi --update-gondolin-image/,
+    /active Gondolin image.*pi --update-gondolin-image --print/,
   );
   assert.equal(state.vmOptions[0].sandbox, undefined);
   await h.emit("session_shutdown");
@@ -277,7 +277,7 @@ test("unreadable active pointer reports error and uses default", async () => {
   await h.emit("session_start");
   assert.match(
     h.notices.join("\n"),
-    /active Gondolin image.*pi --update-gondolin-image/,
+    /active Gondolin image.*pi --update-gondolin-image --print/,
   );
   assert.equal(state.vmOptions[0].sandbox, undefined);
   await h.emit("session_shutdown");
@@ -303,7 +303,7 @@ test("missing assets report error and use default without replacing active point
   await h.emit("session_start");
   assert.match(
     h.notices.join("\n"),
-    /active Gondolin image.*pi --update-gondolin-image/,
+    /active Gondolin image.*pi --update-gondolin-image --print/,
   );
   assert.equal(state.vmOptions[0].sandbox, undefined);
   await h.emit("session_shutdown");
@@ -332,7 +332,7 @@ test("missing pointer does not promote new-layout builds", async () => {
   assert.ok(
     existsSync(path.join(imagesDir, pointer.imageKey, pointer.buildId)),
   );
-  assert.match(h.notices.join("\n"), /outdated.*pi --update-gondolin-image/);
+  assert.match(h.notices.join("\n"), /outdated.*pi --update-gondolin-image --print/);
   await h.emit("session_shutdown");
 });
 
