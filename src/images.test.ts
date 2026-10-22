@@ -332,7 +332,10 @@ test("missing pointer does not promote new-layout builds", async () => {
   assert.ok(
     existsSync(path.join(imagesDir, pointer.imageKey, pointer.buildId)),
   );
-  assert.match(h.notices.join("\n"), /outdated.*pi --update-gondolin-image --print/);
+  assert.match(
+    h.notices.join("\n"),
+    /outdated.*pi --update-gondolin-image --print/,
+  );
   await h.emit("session_shutdown");
 });
 
