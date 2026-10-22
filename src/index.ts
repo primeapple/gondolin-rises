@@ -1,4 +1,5 @@
 /** Run pi file and shell tools inside Gondolin; mount host project at /workspace. */
+import { type BuildConfig, listSessions } from "@earendil-works/gondolin";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   getAgentDir,
@@ -7,10 +8,9 @@ import {
   createReadTool,
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
-import { getDefaultBuildConfig } from "@earendil-works/gondolin";
 import { assertHostDependencies } from "./dependencies.ts";
 import { loadConfig } from "./config.ts";
-import { rebuildPackageImage } from "./images.ts";
+import { rebuildImage } from "./images.ts";
 import {
   GUEST_WORKSPACE,
   createGondolinBashOps,
@@ -21,7 +21,14 @@ import {
 import { createSandbox } from "./sandbox.ts";
 
 export default async function (pi: ExtensionAPI) {
-  const config = await loadConfig(getAgentDir());
+  const agentDir = getAgentDir();
+  let config: BuildConfig | null = null;
+  let configError: Error | undefined;
+  try {
+    config = await loadConfig(agentDir);
+  } catch (error) {
+    configError = error instanceof Error ? error : new Error(String(error));
+  }
   const localCwd = process.cwd();
 
   const localRead = createReadTool(localCwd);
@@ -35,7 +42,11 @@ export default async function (pi: ExtensionAPI) {
   });
 
   let sandboxEnabled = true;
-  const { ensureVm, close } = createSandbox(localCwd, config.image.packages);
+  const { ensureVm, close } = createSandbox(
+    localCwd,
+    config,
+    configError?.message,
+  );
 
   pi.registerCommand("sandbox", {
     description: "Toggle Gondolin sandbox on or off",
@@ -57,15 +68,23 @@ export default async function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (pi.getFlag("update-gondolin-image") === true) {
       try {
-        if (config.image.packages.length === 0) {
-          console.log("No custom image packages configured; nothing to build.");
+        if (configError) throw configError;
+        if (!config) {
+          console.log("No Gondolin build config found; nothing to build.");
         } else {
+          // ponytail: one session check; VM starts after check may race rebuild.
+          if ((await listSessions()).some((session) => session.alive)) {
+            throw new Error(
+              "Gondolin sessions are active. Close all Gondolin sessions, then run `pi --update-gondolin-image` again.",
+            );
+          }
           await assertHostDependencies({
             buildImage: true,
-            arch: getDefaultBuildConfig().arch,
+            buildConfig: config,
+            arch: config.arch,
             vmm: process.env.GONDOLIN_VMM,
           });
-          const imagePath = await rebuildPackageImage(config.image.packages);
+          const imagePath = await rebuildImage(config, agentDir);
           console.log(`Updated custom Gondolin image: ${imagePath}`);
         }
       } catch (error) {

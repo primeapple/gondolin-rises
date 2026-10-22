@@ -1,5 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -7,10 +14,10 @@ import {
   type BuildConfig,
   buildAssets,
   getAssetVersion,
-  getDefaultBuildConfig,
   loadAssetManifest,
   loadGuestAssets,
   validateBuildConfig,
+  verifyAssets,
 } from "@earendil-works/gondolin";
 
 type CachedImagePointer = {
@@ -18,6 +25,7 @@ type CachedImagePointer = {
   buildId?: string;
   assetVersion: string | null;
   config: BuildConfig;
+  sourceConfig?: BuildConfig;
 };
 
 function imagePath(imagesDir: string, pointer: CachedImagePointer): string {
@@ -41,7 +49,9 @@ function isCachedImagePointer(value: unknown): value is CachedImagePointer {
         /^[a-f0-9-]+$/.test(pointer.buildId))) &&
     (typeof pointer.assetVersion === "string" ||
       pointer.assetVersion === null) &&
-    validateBuildConfig(pointer.config)
+    validateBuildConfig(pointer.config) &&
+    (pointer.sourceConfig === undefined ||
+      validateBuildConfig(pointer.sourceConfig))
   );
 }
 
@@ -51,10 +61,12 @@ function readImageConfig(dir: string): BuildConfig {
     throw new Error("Missing or invalid Gondolin image manifest");
   }
   loadGuestAssets(dir);
+  if (!verifyAssets(dir))
+    throw new Error("Gondolin image failed asset verification");
   return manifest.config;
 }
 
-async function readImagePointer(
+async function readStoredPointer(
   imagesDir: string,
 ): Promise<CachedImagePointer | null> {
   let content: string;
@@ -68,6 +80,14 @@ async function readImagePointer(
   const value: unknown = JSON.parse(content);
   if (!isCachedImagePointer(value))
     throw new Error("Invalid Gondolin image pointer");
+  return value;
+}
+
+async function readImagePointer(
+  imagesDir: string,
+): Promise<CachedImagePointer | null> {
+  const value = await readStoredPointer(imagesDir);
+  if (!value) return null;
   const config = readImageConfig(imagePath(imagesDir, value));
   if (!isDeepStrictEqual(config, value.config)) {
     throw new Error("Active Gondolin image does not match its pointer");
@@ -91,22 +111,6 @@ async function writeImagePointer(
   }
 }
 
-function createBuildConfig(packages: string[]): BuildConfig {
-  const buildConfig = getDefaultBuildConfig();
-  const alpine = buildConfig.alpine;
-  if (!alpine)
-    throw new Error(
-      "Gondolin default build config must include Alpine settings",
-    );
-  buildConfig.alpine = {
-    ...alpine,
-    rootfsPackages: [
-      ...new Set([...(alpine.rootfsPackages ?? []), ...packages]),
-    ],
-  };
-  return buildConfig;
-}
-
 function getImageCacheDir(): string {
   const cacheRoot =
     process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
@@ -119,61 +123,82 @@ function getImageKey(assetVersion: string, buildConfig: BuildConfig): string {
     .digest("hex");
 }
 
-export async function rebuildPackageImage(
-  packages: string[],
+export async function rebuildImage(
+  buildConfig: BuildConfig,
+  configDir: string,
   imagesDir = getImageCacheDir(),
 ): Promise<string> {
-  const buildConfig = createBuildConfig(packages);
   const assetVersion = getAssetVersion();
   const imageKey = getImageKey(assetVersion, buildConfig);
   const buildId = randomUUID();
   const outputDir = path.join(imagesDir, imageKey, buildId);
 
+  const previous = await readStoredPointer(imagesDir).catch(() => null);
   await mkdir(path.dirname(outputDir), { recursive: true });
-  await buildAssets(buildConfig, { outputDir });
-  const config = readImageConfig(outputDir);
-  if (!isDeepStrictEqual(config, buildConfig)) {
-    throw new Error("Gondolin image build produced an incomplete cache entry");
+  try {
+    await buildAssets(buildConfig, { outputDir, configDir });
+    const config = readImageConfig(outputDir);
+    const pointer = {
+      imageKey,
+      buildId,
+      assetVersion,
+      config,
+      sourceConfig: buildConfig,
+    };
+    await writeImagePointer(imagesDir, pointer);
+  } catch (error) {
+    await rm(outputDir, { recursive: true, force: true });
+    throw error;
   }
-  const pointer = { imageKey, buildId, assetVersion, config };
-  await writeImagePointer(imagesDir, pointer);
+  if (previous?.buildId)
+    await rm(imagePath(imagesDir, previous), { recursive: true, force: true });
   return outputDir;
 }
 
 export async function getStartupImage(
-  packages: string[],
-  notify: (message: string) => void,
+  buildConfig: BuildConfig | null,
+  notify: (message: string, level: "warning" | "error") => void,
+  configError?: string,
   imagesDir = getImageCacheDir(),
 ): Promise<string | undefined> {
-  if (packages.length === 0) return undefined;
+  if (!buildConfig && !configError) return undefined;
+  if (configError)
+    notify(
+      `Warning: ${configError}. Fix gondolin-build-config.json before rebuilding.`,
+      "warning",
+    );
 
-  const buildConfig = createBuildConfig(packages);
   const assetVersion = getAssetVersion();
   let pointer: CachedImagePointer | null;
   try {
     pointer = await readImagePointer(imagesDir);
   } catch (error) {
-    throw new Error(
+    notify(
       `Cannot load active Gondolin image at ${path.join(imagesDir, "active.json")}. Run ` +
         "`pi --update-gondolin-image` to rebuild it. " +
         (error instanceof Error ? error.message : String(error)),
-      { cause: error },
+      "error",
     );
+    pointer = null;
   }
 
   if (!pointer) {
-    notify(
-      "No custom Gondolin image cached. Run `pi --update-gondolin-image` to build one.",
-    );
+    if (buildConfig)
+      notify(
+        "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image` to rebuild it.",
+        "warning",
+      );
     return undefined;
   }
 
   if (
-    pointer.assetVersion !== assetVersion ||
-    !isDeepStrictEqual(pointer.config, buildConfig)
+    buildConfig &&
+    (pointer.assetVersion !== assetVersion ||
+      !isDeepStrictEqual(pointer.sourceConfig ?? pointer.config, buildConfig))
   ) {
     notify(
-      "Custom Gondolin image is outdated. Run `pi --update-gondolin-image` to rebuild it.",
+      "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image` to rebuild it.",
+      "warning",
     );
   }
   return imagePath(imagesDir, pointer);

@@ -23,6 +23,10 @@ type FixtureState = {
   gondolinVersion: string;
   failStart: boolean;
   failBuild: boolean;
+  failVerification: boolean;
+  sessions: { alive: boolean }[];
+  sessionError: boolean;
+  buildOptions: { outputDir: string; configDir?: string }[];
   startBarrier: PromiseWithResolvers<void> | null;
   closeBarrier: PromiseWithResolvers<void> | null;
   vm: { close: () => Promise<void>; fs: object };
@@ -40,6 +44,10 @@ export const state: FixtureState = {
   gondolinVersion: "v0.13.0",
   failStart: false,
   failBuild: false,
+  failVerification: false,
+  sessions: [],
+  sessionError: false,
+  buildOptions: [],
   startBarrier: null,
   closeBarrier: null,
   vm: { close: async () => {}, fs: {} },
@@ -51,16 +59,26 @@ beforeEach(async () => {
   state.configDir = await mkdtemp(path.join(os.tmpdir(), "gondolin-rises-"));
   const fakeBin = path.join(state.configDir, "bin");
   await mkdir(fakeBin);
-  for (const command of ["mke2fs", "qemu-system-x86_64", "qemu-img"]) {
+  for (const command of [
+    "mke2fs",
+    "cpio",
+    "lz4",
+    "debugfs",
+    "docker",
+    "qemu-system-x86_64",
+    "qemu-system-aarch64",
+    "qemu-img",
+  ]) {
     const executable = path.join(fakeBin, command);
     await writeFile(executable, "#!/bin/sh\nexit 0\n");
     await chmod(executable, 0o755);
   }
   process.env.PATH = `${fakeBin}${delimiter}${originalPath ?? ""}`;
-  state.configFile = path.join(state.configDir, "gondolin-rises.json");
+  state.configFile = path.join(state.configDir, "gondolin-build-config.json");
   state.cacheHome = path.join(state.configDir, "cache");
   process.env.XDG_CACHE_HOME = state.cacheHome;
-  await writeFile(state.configFile, JSON.stringify({ version: 0 }));
+  state.sessions = [];
+  state.sessionError = false;
   state.gondolinVersion = "v0.13.0";
   state.startBarrier = null;
   state.closeBarrier = null;
@@ -93,7 +111,9 @@ function tool(name: string, cwd: string, options: ToolOptions = {}) {
   };
 }
 
-const { validateBuildConfig } = await import("@earendil-works/gondolin");
+const { validateBuildConfig, parseBuildConfig } = await import(
+  "@earendil-works/gondolin"
+);
 mock.module("@earendil-works/pi-coding-agent", {
   namedExports: {
     ...Object.fromEntries(
@@ -109,6 +129,11 @@ mock.module("@earendil-works/pi-coding-agent", {
 mock.module("@earendil-works/gondolin", {
   namedExports: {
     validateBuildConfig,
+    parseBuildConfig,
+    listSessions: async () => {
+      if (state.sessionError) throw new Error("session query failed");
+      return state.sessions;
+    },
     RealFSProvider: class {},
     VM: {
       create: async (options: VMOptions) => {
@@ -121,16 +146,30 @@ mock.module("@earendil-works/gondolin", {
     },
     buildAssets: async (
       config: BuildConfig,
-      options: { outputDir: string },
+      options: { outputDir: string; configDir?: string },
     ) => {
       state.builds++;
       state.buildConfigs.push(config);
-      if (state.failBuild) throw new Error("image build failed");
+      state.buildOptions.push(options);
       await mkdir(options.outputDir, { recursive: true });
+      if (state.failBuild) throw new Error("image build failed");
       await writeFile(path.join(options.outputDir, "built"), "ok");
+      const manifestConfig = structuredClone(config);
+      // Match upstream container builder: staged paths and force differ from input.
+      if (manifestConfig.container?.force) {
+        manifestConfig.container.force = false;
+        manifestConfig.sandboxdPath = "/work/sandboxd";
+        if (manifestConfig.postBuild?.copy) {
+          manifestConfig.postBuild.copy[0].src =
+            "/work/postbuild-copy-0/source.txt";
+        }
+      }
       await writeFile(
         path.join(options.outputDir, "manifest.json"),
-        JSON.stringify({ config }),
+        JSON.stringify({
+          config: manifestConfig,
+          runtimeDefaults: config.runtimeDefaults,
+        }),
       );
       return { outputDir: options.outputDir };
     },
@@ -143,6 +182,8 @@ mock.module("@earendil-works/gondolin", {
         return null;
       }
     },
+    verifyAssets: (dir: string) =>
+      !state.failVerification && existsSync(path.join(dir, "built")),
     loadGuestAssets: (dir: string) => {
       if (!existsSync(path.join(dir, "built")))
         throw new Error("incomplete guest image");
@@ -167,9 +208,9 @@ function createContext(statuses: string[], notices: string[]) {
       setStatus: (_key: string, text: string) => {
         statuses.push(text);
       },
-      notify: (text: string) => {
+      notify: mock.fn((text: string, _level?: string) => {
         notices.push(text);
-      },
+      }),
     },
   };
 }
@@ -204,9 +245,11 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
   state.closes = 0;
   state.builds = 0;
   state.buildConfigs = [];
+  state.buildOptions = [];
   state.vmOptions = [];
   state.failStart = false;
   state.failBuild = false;
+  state.failVerification = false;
   const events = new Map<keyof EventResults, Handler>();
   const commands = new Map<string, Command>();
   const registeredFlags = new Map<string, Flag>();

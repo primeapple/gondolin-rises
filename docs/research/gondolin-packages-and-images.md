@@ -63,7 +63,7 @@ If you want Debian/Ubuntu packages, create an OCI image (for example, derive fro
 
 ## Selecting the image in this project
 
-When `image.packages` is non-empty, [`src/images.ts`](../../src/images.ts) adds those packages to Gondolin's default Alpine build config. Only `pi --update-gondolin-image` builds guest assets into `$XDG_CACHE_HOME/gondolin-rises/images` (default `~/.cache/gondolin-rises/images`) and atomically activates the successful build. Startup uses only the active pointer; it never builds, scans for replacement images, or repairs the cache. Missing pointer uses the default image with an update warning; invalid pointer or broken active assets block startup. Changed package settings or Gondolin version warn while keeping the active image. Explicit `sandbox.imagePath` takes precedence over `GONDOLIN_GUEST_DIR` and `GONDOLIN_DEFAULT_IMAGE`. With an empty package list, Gondolin resolves its default image and honors those environment overrides.
+Optional `gondolin-build-config.json` in Pi config directory supplies upstream build config. See [README](../../README.md#custom-images) for setup and [spec](../spec.md#configuration) for startup, cache, and rebuild rules.
 
 ## Sources
 

@@ -8,7 +8,7 @@ Requires Node.js 24 or newer.
 Only runtime dependency: Gondolin. pi supplies extension API.
 
 ## Configuration
-Optional `gondolin-build-config.json` in pi config directory uses upstream Gondolin build-config format, defaults, and validation. Resolve relative paths against config file directory. Never create or rewrite config. Ignore `gondolin-rises.json`; no automatic migration.
+Optional `gondolin-build-config.json` in pi config directory uses upstream Gondolin build-config format, defaults, and validation. Resolve relative paths against config file directory. Never create or rewrite config.
 
 - Missing config uses Gondolin default image, including environment overrides, without custom-image warning. Leave existing cache untouched.
 - Pi startup never builds custom images or repairs cache. Custom images live in `$XDG_CACHE_HOME/gondolin-rises/images`, falling back to `~/.cache/gondolin-rises/images`. Use image named by active cache pointer; do not discover or promote cached images. Valid custom image takes precedence over `GONDOLIN_GUEST_DIR`.

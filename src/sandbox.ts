@@ -1,17 +1,23 @@
 import {
+  type BuildConfig,
   RealFSProvider,
   VM,
   getDefaultBuildConfig,
+  loadAssetManifest,
 } from "@earendil-works/gondolin";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertHostDependencies } from "./dependencies.ts";
 import { getStartupImage } from "./images.ts";
 import { GUEST_WORKSPACE } from "./operations.ts";
 
-export function createSandbox(localCwd: string, packages: string[]) {
+export function createSandbox(
+  localCwd: string,
+  config: BuildConfig | null,
+  configError?: string,
+) {
   let vm: VM | null = null;
   let vmStarting: Promise<VM> | null = null;
-  let imageWarningShown = false;
+  const imageNoticesShown = new Set<string>();
   let stopped = false;
   let closing: Promise<void> | null = null;
 
@@ -29,9 +35,23 @@ export function createSandbox(localCwd: string, packages: string[]) {
         ),
       );
 
+      const imagePath = await getStartupImage(
+        config,
+        (message, level) => {
+          if (imageNoticesShown.has(message)) return;
+          imageNoticesShown.add(message);
+          ctx?.ui.notify(message, level);
+        },
+        configError,
+      );
+      const runtimeImagePath = imagePath ?? process.env.GONDOLIN_GUEST_DIR;
+      const manifest = runtimeImagePath
+        ? loadAssetManifest(runtimeImagePath)
+        : null;
       try {
         await assertHostDependencies({
-          arch: getDefaultBuildConfig().arch,
+          arch: manifest?.config.arch ?? getDefaultBuildConfig().arch,
+          rootfsMode: manifest?.runtimeDefaults?.rootfsMode,
           vmm: process.env.GONDOLIN_VMM,
         });
       } catch (error) {
@@ -40,11 +60,6 @@ export function createSandbox(localCwd: string, packages: string[]) {
         throw error;
       }
 
-      const imagePath = await getStartupImage(packages, (message) => {
-        if (imageWarningShown) return;
-        imageWarningShown = true;
-        ctx?.ui.notify(message, "warning");
-      });
       if (stopped) throw new Error("Gondolin sandbox shut down");
       const created = await VM.create({
         ...(imagePath ? { sandbox: { imagePath } } : {}),

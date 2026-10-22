@@ -1,19 +1,15 @@
 import assert from "node:assert/strict";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { mock, test } from "node:test";
 import { checkTools, prompt, setup, state } from "./test-fixtures.ts";
 
-test("extension creates version-zero config in Pi config directory", async () => {
-  await rm(state.configFile, { force: true });
+test("extension leaves missing config absent", async () => {
   await setup();
-  assert.deepEqual(JSON.parse(await readFile(state.configFile, "utf8")), {
-    version: 0,
-    image: { packages: [] },
-  });
+  await assert.rejects(readFile(state.configFile, "utf8"), { code: "ENOENT" });
 });
 
 test("extension does not rewrite existing config", async () => {
-  const existing = '{"version":0}\n';
+  const existing = '{"arch":"x86_64","distro":"alpine"}\n';
   await writeFile(state.configFile, existing);
   await setup();
   assert.equal(await readFile(state.configFile, "utf8"), existing);
@@ -36,7 +32,7 @@ test("startup reports missing runtime dependencies without starting VM", async (
 test("image update skips build and reports missing prerequisites", async () => {
   await writeFile(
     state.configFile,
-    JSON.stringify({ version: 0, image: { packages: ["git"] } }),
+    JSON.stringify({ arch: "x86_64", distro: "alpine" }),
   );
   const originalPath = process.env.PATH;
   const originalExitCode = process.exitCode;

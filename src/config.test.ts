@@ -1,52 +1,50 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { loadConfig } from "./config.ts";
 
-test("config rejects missing, malformed, and unsupported versions", async (t) => {
+test("missing build config returns null without creating files", async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-config-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  for (const version of [undefined, null, "0", -1, 1]) {
-    await t.test(`version ${JSON.stringify(version)}`, async () => {
-      await writeFile(
-        path.join(dir, "gondolin-rises.json"),
-        JSON.stringify({ version }),
-      );
-      await assert.rejects(loadConfig(dir), /version must be 0/);
-    });
-  }
+  assert.equal(await loadConfig(dir), null);
+  assert.deepEqual(await readdir(dir), []);
+  assert.equal(await loadConfig(path.join(dir, "absent")), null);
 });
 
-test("config normalizes known fields without rewriting unknown fields", async (t) => {
+test("upstream build config loads unchanged and leaves file untouched", async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-config-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const file = path.join(dir, "gondolin-rises.json");
-  const content = JSON.stringify({
-    version: 0,
-    extra: true,
-    image: { packages: ["git"], extra: true },
-  });
+  const config = {
+    arch: "aarch64",
+    distro: "alpine",
+    postBuild: { copy: [{ src: "./tool", dest: "/usr/bin/tool" }] },
+    runtimeDefaults: { rootfsMode: "readonly" },
+  };
+  const file = path.join(dir, "gondolin-build-config.json");
+  const content = `${JSON.stringify(config, null, 2)}\n`;
   await writeFile(file, content);
-  assert.deepEqual(await loadConfig(dir), {
-    version: 0,
-    image: { packages: ["git"] },
-  });
+  assert.deepEqual(await loadConfig(dir), config);
   assert.equal(await readFile(file, "utf8"), content);
 });
 
-test("config rejects invalid image/package shapes and malformed JSON", async (t) => {
+test("upstream validation rejects malformed JSON and invalid config fields", async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-config-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   for (const content of [
     "{",
     "[]",
     "null",
-    '{"version":0,"image":[]}',
-    '{"version":0,"image":{"packages":[1]}}',
+    "{}",
+    '{"arch":"invalid","distro":"alpine"}',
+    '{"arch":"x86_64","distro":"alpine","alpine":{"version":"3.23.0","rootfsPackages":[1]}}',
+    '{"arch":"x86_64","distro":"alpine","postBuild":{"copy":[{"src":"file","dest":"relative"}]}}',
   ]) {
-    await writeFile(path.join(dir, "gondolin-rises.json"), content);
-    await assert.rejects(loadConfig(dir));
+    await writeFile(path.join(dir, "gondolin-build-config.json"), content);
+    await assert.rejects(
+      loadConfig(dir),
+      /Invalid.*gondolin-build-config.json/,
+    );
   }
 });

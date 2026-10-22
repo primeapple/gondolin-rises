@@ -1,11 +1,14 @@
+import type { BuildConfig } from "@earendil-works/gondolin";
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import path from "node:path";
 
 export type HostDependencyOptions = {
   buildImage?: boolean;
+  buildConfig?: BuildConfig;
   arch: "aarch64" | "x86_64";
   vmm?: string;
+  rootfsMode?: "cow" | "readonly" | "memory";
 };
 
 type HostDependency = {
@@ -20,6 +23,25 @@ function requiredDependencies(
 ): HostDependency[] {
   const dependencies: HostDependency[] = [];
   if (options.buildImage) {
+    const config = options.buildConfig;
+    const hostArch = process.arch === "arm64" ? "aarch64" : "x86_64";
+    const container =
+      config?.container?.force ||
+      (!config?.oci &&
+        (((config?.postBuild?.commands?.length ?? 0) > 0 &&
+          platform !== "linux") ||
+          (platform === "darwin" && options.arch !== hostArch)));
+    if (container || config?.oci) {
+      const runtime = container
+        ? config?.container?.runtime
+        : config?.oci?.runtime;
+      dependencies.push({
+        commands: runtime ? [runtime] : ["docker", "podman"],
+        name: runtime ?? "Docker or Podman",
+        install: "install and start Docker or Podman",
+      });
+    }
+    if (container) return dependencies;
     dependencies.push({
       commands: ["mke2fs", "mkfs.ext4"],
       name: "mke2fs",
@@ -28,6 +50,19 @@ function requiredDependencies(
           ? "brew install e2fsprogs (ensure its sbin directory is on PATH)"
           : "install e2fsprogs (for example: sudo apt install e2fsprogs)",
     });
+    for (const name of ["cpio", "lz4", ...(config?.oci ? ["debugfs"] : [])]) {
+      dependencies.push({
+        commands: [name],
+        name,
+        install:
+          name === "debugfs"
+            ? "install e2fsprogs (on Alpine also install e2fsprogs-extra)"
+            : platform === "darwin"
+              ? `brew install ${name}`
+              : `sudo apt install ${name}`,
+      });
+    }
+    return dependencies;
   }
   if (options.vmm?.trim().toLowerCase() !== "krun") {
     const qemuSystem =
@@ -41,14 +76,15 @@ function requiredDependencies(
           : `install QEMU system emulator (for example: sudo apt install ${options.arch === "aarch64" ? "qemu-system-arm" : "qemu-system-x86"})`,
     });
   }
-  dependencies.push({
-    commands: ["qemu-img"],
-    name: "qemu-img",
-    install:
-      platform === "darwin"
-        ? "brew install qemu"
-        : "install QEMU utilities (for example: sudo apt install qemu-utils)",
-  });
+  if ((options.rootfsMode ?? "cow") === "cow")
+    dependencies.push({
+      commands: ["qemu-img"],
+      name: "qemu-img",
+      install:
+        platform === "darwin"
+          ? "brew install qemu"
+          : "install QEMU utilities (for example: sudo apt install qemu-utils)",
+    });
   return dependencies;
 }
 
