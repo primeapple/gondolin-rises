@@ -8,13 +8,19 @@ Requires Node.js 24 or newer.
 Only runtime dependency: Gondolin. pi supplies extension API.
 
 ## Configuration
-Store configuration in `gondolin-rises.json` in pi config directory. Supported version: `0`; reject missing or other versions. Create version-zero file if absent. Ignore unknown fields without rewriting existing file.
-- `image.packages` lists extra Alpine packages for a cached custom guest image. Missing list means empty list.
-- Empty package list uses Gondolin default image, including environment overrides; image update does nothing.
-- Pi startup never builds custom images or repairs cache. With packages configured, use image named by active cache pointer. Missing pointer uses Gondolin default image and warns with update command; do not discover or promote cached images. Invalid or unreadable pointer, or broken active image, blocks VM startup with actionable error. Leave cache untouched.
-- If active custom image does not match current package list or Gondolin version, keep using it and warn on every startup with update command.
-- `pi --update-gondolin-image` always rebuilds custom image from current config, including when config matches active image. Before build, check host requirements and report all missing dependencies with install guidance; do not start build if any are missing. Switch cache pointer only after successful build; keep older cached images.
-- Before starting VM, check required host runtime dependencies and report all missing dependencies with install guidance. Default copy-on-write root disk needs `qemu-img`; default QEMU backend also needs architecture-matched `qemu-system-*`. `GONDOLIN_VMM=krun` does not require QEMU.
+Optional `gondolin-build-config.json` in pi config directory uses upstream Gondolin build-config format, defaults, and validation. Resolve relative paths against config file directory. Never create or rewrite config. Ignore `gondolin-rises.json`; no automatic migration.
+
+- Missing config uses Gondolin default image, including environment overrides, without custom-image warning. Leave existing cache untouched.
+- Pi startup never builds custom images or repairs cache. Custom images live in `$XDG_CACHE_HOME/gondolin-rises/images`, falling back to `~/.cache/gondolin-rises/images`. Use image named by active cache pointer; do not discover or promote cached images. Valid custom image takes precedence over `GONDOLIN_GUEST_DIR`.
+- Invalid or unreadable config during normal startup shows warning. Use valid active custom image if available; otherwise use Gondolin default image.
+- Missing active image or pointer uses Gondolin default image. Invalid or unreadable pointer, or broken active image, shows actionable error and counts as no custom image; use default. Leave cache untouched.
+- With valid config, missing or outdated custom image warns on every startup: "Warning: Custom Gondolin image is outdated. Run `pi --update-gondolin-image` to rebuild it." Keep using valid outdated image; use default if none exists.
+- Freshness compares parsed config and Gondolin version. Ignore file timestamps, formatting, and changes to files referenced by config.
+- `pi --update-gondolin-image` without config reports nothing to build. Invalid or unreadable config fails update without changing active image. Valid config always rebuilds, even when active image matches.
+- Before rebuild, use Gondolin `listSessions()`. Any live Gondolin session blocks rebuild with actionable error, regardless of image or owning tool. Session-query failure blocks rebuild. No extension-owned usage tracking or locking; sessions starting after check are accepted race.
+- Before build, check host requirements for selected config and report all missing dependencies with install guidance; do not start build if any are missing.
+- Build into temporary directory while retaining old image. Validate completed image before switching active pointer; delete replaced image only after switch. Failed build retains old active image and removes temporary build output. Retain only one completed custom image after successful rebuild. No automatic cleanup of legacy cache entries.
+- Before starting VM, check required host runtime dependencies for selected image and report all missing dependencies with install guidance. Copy-on-write root disk needs `qemu-img`; QEMU backend also needs architecture-matched `qemu-system-*`. `GONDOLIN_VMM=krun` does not require QEMU system emulator.
 
 
 ## Feature: Toggle
