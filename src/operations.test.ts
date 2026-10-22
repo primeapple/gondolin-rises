@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import { test } from "node:test";
+import path from "node:path";
 import type { ExecOptions, VM } from "@earendil-works/gondolin";
-import { createGondolinBashOps } from "./operations.ts";
+import { createGondolinBashOps, guestWorkspacePath } from "./operations.ts";
 
 type FakeVm = { exec: (args: string[], options: ExecOptions) => unknown };
 function bashOps(vm: FakeVm) {
   // Fake replaces only VM execution, not Gondolin lifecycle or filesystem.
   return createGondolinBashOps(vm as unknown as VM, process.cwd());
 }
+
+test("refuses to mount host filesystem root", () => {
+  assert.throws(
+    () => guestWorkspacePath(path.parse(process.cwd()).root),
+    /cannot mount host filesystem root/,
+  );
+});
 
 test("pre-aborted bash never starts VM execution", async () => {
   let executions = 0;
@@ -93,7 +101,7 @@ test("bash streams both output channels and preserves exit code", async () => {
   const controller = new AbortController();
   const vm = {
     exec: (_args: string[], options: ExecOptions) => {
-      assert.equal(options.cwd, "/workspace");
+      assert.equal(options.cwd, process.cwd());
       assert.equal(options.env, undefined);
       return Object.assign(Promise.resolve({ exitCode: 7 }), {
         output: async function* () {

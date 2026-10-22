@@ -26,7 +26,7 @@ Optional `gondolin-build-config.json` in pi config directory uses upstream Gondo
 ## Feature: Toggle
 Sandbox starts on. `/sandbox` toggles on or off after agent becomes idle.
 
-On: `read`, `write`, `edit`, `bash`, and user `!` commands run inside Gondolin. Model prompt identifies VM workspace.
+On: `read`, `write`, `edit`, `bash`, and user `!` commands run inside Gondolin. Mount host session CWD at same absolute guest path; reject host filesystem root as CWD. Model prompt identifies VM and says host CWD is mounted there.
 
 Off: those tools and commands run on host. Model prompt stays unchanged. Status and notification show sandbox state, with host execution warning when off.
 

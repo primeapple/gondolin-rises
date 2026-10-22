@@ -8,7 +8,12 @@ import type {
   WriteOperations,
 } from "@earendil-works/pi-coding-agent";
 
-export const GUEST_WORKSPACE = "/workspace";
+export function guestWorkspacePath(localCwd: string): string {
+  if (path.parse(localCwd).root === localCwd) {
+    throw new Error("cannot mount host filesystem root as Gondolin workspace");
+  }
+  return localCwd.split(path.sep).join(path.posix.sep);
+}
 
 function shQuote(value: string): string {
   // POSIX shell quoting: wraps in single quotes and escapes internal quotes
@@ -16,15 +21,16 @@ function shQuote(value: string): string {
 }
 
 function toGuestPath(localCwd: string, localPath: string): string {
-  // pi tools pass absolute local paths; map them into /workspace.
-  const rel = path.relative(localCwd, localPath);
-  if (rel === "") return GUEST_WORKSPACE;
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+  const resolved = path.resolve(localCwd, localPath);
+  const rel = path.relative(localCwd, resolved);
+  if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
     throw new Error(`path escapes workspace: ${localPath}`);
   }
-  // Convert platform separators to POSIX for the Linux guest
-  const posixRel = rel.split(path.sep).join(path.posix.sep);
-  return path.posix.join(GUEST_WORKSPACE, posixRel);
+  // Guest mount path matches host CWD; convert platform separators to POSIX.
+  return path.posix.join(
+    guestWorkspacePath(localCwd),
+    rel.split(path.sep).join(path.posix.sep),
+  );
 }
 
 export function createGondolinReadOps(

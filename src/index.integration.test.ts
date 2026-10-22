@@ -43,6 +43,7 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
   );
   const originalCwd = process.cwd();
   process.chdir(workspace);
+  const guestCwd = process.cwd();
   agentDir = path.join(workspace, "agent");
   t.after(async () => {
     process.chdir(originalCwd);
@@ -50,7 +51,8 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
   });
 
   const files = new Map([
-    ["/workspace/example.txt", Buffer.from("guest original\n")],
+    [path.join(guestCwd, "example.txt"), Buffer.from("guest original\n")],
+    [path.join(guestCwd, "..notes"), Buffer.from("dotdot name\n")],
   ]);
   const calls: Call[] = [];
   const close = mock.fn(async () => {});
@@ -90,7 +92,7 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
   const events = new Map<string, Handler>();
   const commands = new Map<string, Command>();
   const ctx = {
-    cwd: workspace,
+    cwd: guestCwd,
     waitForIdle: async () => {},
     ui: {
       theme: { fg: (_color: string, text: string) => text },
@@ -138,20 +140,28 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
 
   const read = await execute("read", { path: "example.txt" });
   assert.equal(text(read), "guest original\n");
+  assert.equal(
+    text(await execute("read", { path: path.join(guestCwd, "example.txt") })),
+    "guest original\n",
+  );
+  assert.equal(
+    text(await execute("read", { path: "..notes" })),
+    "dotdot name\n",
+  );
   await execute("write", {
     path: "nested/new.txt",
     content: "guest written\n",
   });
   assert.equal(
-    files.get("/workspace/nested/new.txt")?.toString(),
+    files.get(path.join(guestCwd, "nested/new.txt"))?.toString(),
     "guest written\n",
   );
   await execute("edit", {
-    path: "example.txt",
+    path: path.join(guestCwd, "example.txt"),
     edits: [{ oldText: "guest original", newText: "guest edited" }],
   });
   assert.equal(
-    files.get("/workspace/example.txt")?.toString(),
+    files.get(path.join(guestCwd, "example.txt"))?.toString(),
     "guest edited\n",
   );
   const shell = await execute("bash", { command: "printf 'guest shell\\n'" });
@@ -159,17 +169,20 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
   assert.ok(
     calls.some(
       (call) =>
-        call.operation === "read" && call.path === "/workspace/example.txt",
+        call.operation === "read" &&
+        call.path === path.join(guestCwd, "example.txt"),
     ),
   );
   assert.ok(
     calls.some(
-      (call) => call.operation === "mkdir" && call.path === "/workspace/nested",
+      (call) =>
+        call.operation === "mkdir" &&
+        call.path === path.join(guestCwd, "nested"),
     ),
   );
   const bash = calls.find((call) => call.operation === "bash");
   assert.ok(bash);
-  assert.equal(bash.options.cwd, "/workspace");
+  assert.equal(bash.options.cwd, guestCwd);
   assert.equal(bash.options.env, undefined);
   assert.equal(
     await readFile(path.join(workspace, "example.txt"), "utf8"),
@@ -183,6 +196,10 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
     }),
   );
   await assert.rejects(execute("read", { path: "missing.txt" }), /ENOENT/);
+  await assert.rejects(
+    execute("read", { path: path.join(guestCwd, "..", "sibling", "file") }),
+    /path escapes workspace/,
+  );
   await toggle();
   const host = await execute("read", { path: "example.txt" });
   assert.equal(text(host), "host original\n");
@@ -191,7 +208,7 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
     await readFile(path.join(workspace, "host.txt"), "utf8"),
     "host written\n",
   );
-  assert.equal(files.has("/workspace/host.txt"), false);
+  assert.equal(files.has(path.join(guestCwd, "host.txt")), false);
   await toggle();
   assert.equal(
     text(await execute("read", { path: "example.txt" })),

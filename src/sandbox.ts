@@ -8,7 +8,7 @@ import {
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertHostDependencies } from "./dependencies.ts";
 import { getStartupImage } from "./images.ts";
-import { GUEST_WORKSPACE } from "./operations.ts";
+import { guestWorkspacePath } from "./operations.ts";
 
 export function createSandbox(
   localCwd: string,
@@ -27,12 +27,10 @@ export function createSandbox(
     if (vmStarting) return vmStarting;
 
     vmStarting = (async () => {
+      const mountPath = guestWorkspacePath(localCwd);
       ctx?.ui.setStatus(
         "gondolin",
-        ctx.ui.theme.fg(
-          "accent",
-          `Gondolin: starting (mount ${GUEST_WORKSPACE})`,
-        ),
+        ctx.ui.theme.fg("accent", `Gondolin: starting (mount ${mountPath})`),
       );
 
       const imagePath = await getStartupImage(
@@ -65,7 +63,7 @@ export function createSandbox(
         ...(imagePath ? { sandbox: { imagePath } } : {}),
         vfs: {
           mounts: {
-            [GUEST_WORKSPACE]: new RealFSProvider(localCwd),
+            [mountPath]: new RealFSProvider(localCwd),
           },
         },
       });
@@ -74,13 +72,10 @@ export function createSandbox(
       if (stopped) throw new Error("Gondolin sandbox shut down");
       ctx?.ui.setStatus(
         "gondolin",
-        ctx.ui.theme.fg(
-          "accent",
-          `Gondolin: on (${localCwd} -> ${GUEST_WORKSPACE})`,
-        ),
+        ctx.ui.theme.fg("accent", `Gondolin: on (mount ${mountPath})`),
       );
       ctx?.ui.notify(
-        `Gondolin VM ready. Host ${localCwd} mounted at ${GUEST_WORKSPACE}`,
+        `Gondolin VM ready. Host CWD mounted at same guest path: ${mountPath}`,
         "info",
       );
       return created;

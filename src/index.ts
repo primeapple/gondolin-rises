@@ -1,4 +1,4 @@
-/** Run pi file and shell tools inside Gondolin; mount host project at /workspace. */
+/** Run pi file and shell tools inside Gondolin; mount host project at its CWD. */
 import { type BuildConfig, listSessions } from "@earendil-works/gondolin";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
@@ -12,7 +12,6 @@ import { assertHostDependencies } from "./dependencies.ts";
 import { loadConfig } from "./config.ts";
 import { rebuildImage } from "./images.ts";
 import {
-  GUEST_WORKSPACE,
   createGondolinBashOps,
   createGondolinEditOps,
   createGondolinReadOps,
@@ -165,13 +164,13 @@ export default async function (pi: ExtensionAPI) {
     return { operations: createGondolinBashOps(activeVm, localCwd) };
   });
 
-  // Replace the CWD line in the system prompt so the model sees /workspace
+  // Replace the CWD line so the model sees the guest path and VM marker.
   pi.on("before_agent_start", async (event, ctx) => {
     if (!sandboxEnabled) return;
     await ensureVm(ctx);
     const modified = event.systemPrompt.replace(
       `Current working directory: ${localCwd}`,
-      `Current working directory: ${GUEST_WORKSPACE} (Gondolin VM, mounted from host: ${localCwd})`,
+      `Current working directory: ${localCwd} (Gondolin VM, mounted from host: ${localCwd})`,
     );
     return { systemPrompt: modified };
   });

@@ -16,6 +16,24 @@ test("user bash starts VM lazily rather than falling through to host", async () 
   await h.emit("session_shutdown");
 });
 
+test("mounts session CWD at same guest path and keeps VM prompt marker", async () => {
+  const h = await setup();
+  const cwd = process.cwd();
+  await h.emit("session_start");
+
+  const mounts = state.vmOptions[0]?.vfs?.mounts;
+  assert.deepEqual(Object.keys(mounts ?? {}), [cwd]);
+
+  const result = await h.emit("before_agent_start", {
+    systemPrompt: `Current working directory: ${cwd}`,
+  });
+  assert.equal(
+    result?.systemPrompt,
+    `Current working directory: ${cwd} (Gondolin VM, mounted from host: ${cwd})`,
+  );
+  await h.emit("session_shutdown");
+});
+
 test("failed startup stays sandboxed, supports off, and retries safely", async () => {
   const h = await setup();
   state.failStart = true;
