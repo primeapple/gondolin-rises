@@ -59,6 +59,8 @@ test("manual image update installs a pointer and startup reuses it", async () =>
   await next.emit("session_start");
   assert.equal(state.builds, 0);
   assert.equal(state.vmOptions[0].sandbox?.imagePath, imagePath);
+  assert.deepEqual(state.vmOptions[0].env, { HOME: state.homeDir });
+  assert.equal(state.vm.fs.mkdir.mock.callCount(), 1);
   assert.doesNotMatch(next.notices.join("\n"), /outdated|No custom/i);
   await next.emit("session_shutdown");
 

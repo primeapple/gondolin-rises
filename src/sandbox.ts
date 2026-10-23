@@ -97,11 +97,19 @@ export function createSandbox(
         ctx?.ui.notify(message, "error");
         throw error;
       }
+      const homePath = guestWorkspacePath(os.homedir());
       const created = await VM.create({
         ...(imagePath ? { sandbox: { imagePath } } : {}),
+        env: { HOME: homePath },
         vfs: { mounts },
       });
 
+      try {
+        await created.fs.mkdir(homePath, { recursive: true });
+      } catch (error) {
+        await created.close();
+        throw error;
+      }
       vm = created;
       if (stopped) throw new Error("Gondolin sandbox shut down");
       ctx?.ui.setStatus(

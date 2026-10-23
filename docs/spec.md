@@ -30,6 +30,11 @@ Optional `gondolin-build-config.json` in pi config directory uses upstream Gondo
 Optional `gondolin-rises.json` in pi config directory controls extra host mounts, separate from image build config. Never create or rewrite config. Missing file means no extra mounts. Require `_version: 0` and `mounts` array of relative directory paths. Resolve each path against config file directory; reject absolute paths and missing/non-directory paths. Allow symlinks only when mount root resolves inside user's home directory or host temp directory, including either directory itself. Mount each resolved host directory at same absolute guest path. No symlink warnings or recursive symlink scan. Invalid or unreadable config fails sandbox startup with actionable error; never start VM with partial mount list.
 
 
+## Feature: Home path
+Guest `HOME` matches host `os.homedir()`. Guest home directory exists. Sandbox shell startup preserves this value, so bare `~` resolves to same absolute path as on host. Applies to default and custom images; no build-config change or image rebuild required.
+
+Home path matching does not change guest username, UID, or GID. Never mount host home automatically. Only CWD and configured mounts expose host files; unmounted home paths remain guest-local. Existing tool path restrictions and mount containment stay unchanged. Never forward full host environment.
+
 ## Feature: Toggle
 Sandbox starts on. `/sandbox` toggles on or off after agent becomes idle.
 

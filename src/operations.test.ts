@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { getEventListeners } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import path from "node:path";
 import type { ExecOptions, VM } from "@earendil-works/gondolin";
 import {
@@ -243,5 +245,36 @@ test("bash preserves VM errors without treating them as cancellation", async () 
       onData: () => {},
     }),
     (error) => error === failure,
+  );
+});
+
+test("bash restores host HOME after startup files change it", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-home-shell-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const home = path.join(dir, "guest home ' $-");
+  const homeMock = mock.method(os, "homedir", () => home);
+  t.after(() => homeMock.mock.restore());
+  const startup = path.join(dir, "startup.sh");
+  await writeFile(startup, "export HOME=/wrong-home\n");
+  let stdout = "";
+  const vm = {
+    exec: (args: string[]) => {
+      stdout = execFileSync(args[0], args.slice(1), {
+        env: { ...process.env, HOME: home, BASH_ENV: startup },
+        encoding: "utf8",
+      });
+      return Object.assign(Promise.resolve({ exitCode: 0 }), {
+        output: async function* () {
+          yield { data: Buffer.from(stdout) };
+        },
+      });
+    },
+  };
+  await bashOps(vm).exec('printf "%s\\n" "$HOME" ~', process.cwd(), {
+    onData: () => {},
+  });
+  assert.equal(
+    stdout,
+    `${guestWorkspacePath(home)}\n${guestWorkspacePath(home)}\n`,
   );
 });

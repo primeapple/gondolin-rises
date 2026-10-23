@@ -47,7 +47,7 @@ pi --no-extensions -e /path/to/gondolin-rises
 
 ## Features
 
-### Sandbox toggle
+### Sandbox
 
 Sandbox starts on. Run `/sandbox` inside pi to toggle off or on. Toggle waits for agent to become idle.
 
@@ -63,8 +63,6 @@ When sandbox is on, optional `gondolin-rises.json` in Pi's agent config director
 No config means no extra mounts. Invalid config blocks sandbox startup. CWD and configured mounts must resolve inside your home directory or host temp directory (`os.tmpdir()`), including either directory itself. Mounted directories are writable from guest commands. Gondolin blocks host symlink targets outside each mount root on access, even if target is elsewhere in home. No recursive symlink scan or symlink warnings. Guest VM files outside home remain accessible.
 
 When off, `read`, `write`, `edit`, `bash`, and user `!` commands run directly on host, without VM isolation. Status and notification show current state.
-
-VM stays alive while off, gets reused when on, and closes on session shutdown. Failed startup never falls back to host; toggle off explicitly for host execution, or retry startup.
 
 ### Custom images
 

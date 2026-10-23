@@ -1,4 +1,5 @@
 import { constants as fsConstants } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { VM } from "@earendil-works/gondolin";
 import type {
@@ -15,6 +16,11 @@ export function guestWorkspacePath(localCwd: string): string {
 function shQuote(value: string): string {
   // POSIX shell quoting: wraps in single quotes and escapes internal quotes
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function withGuestHome(command: string): string {
+  // Login profiles can reset HOME; restore it before command expansion.
+  return `export HOME=${shQuote(guestWorkspacePath(os.homedir()))}\n${command}`;
 }
 
 function isWithin(root: string, candidate: string): boolean {
@@ -68,7 +74,7 @@ export function createGondolinReadOps(
         const r = await vm.exec([
           "/bin/sh",
           "-lc",
-          `file --mime-type -b ${shQuote(guestPath)}`,
+          withGuestHome(`file --mime-type -b ${shQuote(guestPath)}`),
         ]);
         if (!r.ok) return null;
         const m = r.stdout.trim();
@@ -142,7 +148,7 @@ export function createGondolinBashOps(
 
       try {
         // `/bin/bash -lc` for a familiar environment (pipelines, expansions, etc.)
-        const proc = vm.exec(["/bin/bash", "-lc", command], {
+        const proc = vm.exec(["/bin/bash", "-lc", withGuestHome(command)], {
           cwd: guestCwd,
           signal: ac.signal,
           stdout: "pipe",

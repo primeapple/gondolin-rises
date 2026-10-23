@@ -53,7 +53,10 @@ test("root CWD remains blocked even with configured root mount", async () => {
   const root = path.parse(process.cwd()).root;
   const { createSandbox } = await import("./sandbox.ts");
   const sandbox = createSandbox(root, null, [root]);
-  await assert.rejects(sandbox.ensureVm(h.ctx), /outside user home and temp directory/);
+  await assert.rejects(
+    sandbox.ensureVm(h.ctx),
+    /outside user home and temp directory/,
+  );
   assert.equal(state.starts, 0);
   assert.match(h.notices.join("\n"), /outside user home and temp directory/);
   await sandbox.close(h.ctx);
@@ -68,7 +71,10 @@ for (const useSymlink of [false, true]) {
     if (useSymlink) await symlink(outside, link);
     const { createSandbox } = await import("./sandbox.ts");
     const sandbox = createSandbox(useSymlink ? link : outside, null, []);
-    await assert.rejects(sandbox.ensureVm(h.ctx), /outside user home and temp directory/);
+    await assert.rejects(
+      sandbox.ensureVm(h.ctx),
+      /outside user home and temp directory/,
+    );
     assert.equal(state.starts, 0);
     await sandbox.close(h.ctx);
   });
@@ -92,7 +98,10 @@ for (const target of ["root", "outside", "home-sibling", "symlink"]) {
       JSON.stringify({ _version: 0, mounts: [".", mount] }),
     );
     const h = await setup();
-    await assert.rejects(h.emit("session_start"), /outside user home and temp directory/);
+    await assert.rejects(
+      h.emit("session_start"),
+      /outside user home and temp directory/,
+    );
     assert.equal(state.starts, 0);
     assert.match(h.notices.join("\n"), /outside user home and temp directory/);
     await h.emit("session_shutdown");
@@ -188,7 +197,10 @@ test("checks mount target again after config loads", async () => {
   const h = await setup();
   await unlink(link);
   await symlink(state.testDir, link);
-  await assert.rejects(h.emit("session_start"), /outside user home and temp directory/);
+  await assert.rejects(
+    h.emit("session_start"),
+    /outside user home and temp directory/,
+  );
   assert.equal(state.starts, 0);
   await h.emit("session_shutdown");
 });
@@ -288,4 +300,36 @@ test("shutdown before first use prevents VM creation", async () => {
   await h.emit("session_shutdown");
   await assert.rejects(h.emit("session_start"), /shut down/);
   assert.equal(state.starts, 0);
+});
+
+test("guest home matches host without mounting whole home or building image", async () => {
+  const h = await setup();
+  await h.emit("session_start");
+  assert.deepEqual(state.vmOptions[0].env, {
+    HOME: guestWorkspacePath(state.homeDir),
+  });
+  assert.deepEqual(state.vm.fs.mkdir.mock.calls[0].arguments, [
+    guestWorkspacePath(state.homeDir),
+    { recursive: true },
+  ]);
+  assert.deepEqual(Object.keys(state.vmOptions[0].vfs?.mounts ?? {}), [
+    guestWorkspacePath(process.cwd()),
+  ]);
+  assert.equal(state.builds, 0);
+  await h.emit("session_shutdown");
+});
+
+test("failed guest home setup closes VM without publication and allows retry", async () => {
+  const h = await setup();
+  state.vm.fs.mkdir.mock.mockImplementation(async () => {
+    throw new Error("home setup failed");
+  });
+  await assert.rejects(h.emit("session_start"), /home setup failed/);
+  assert.equal(state.closes, 1);
+  assert.doesNotMatch(h.notices.join("\n"), /VM ready/);
+  state.vm.fs.mkdir.mock.mockImplementation(async () => {});
+  await h.emit("session_start");
+  assert.equal(state.starts, 2);
+  await h.emit("session_shutdown");
+  assert.equal(state.closes, 2);
 });

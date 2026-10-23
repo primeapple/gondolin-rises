@@ -3,6 +3,7 @@ import type { BuildConfig, VMOptions } from "@earendil-works/gondolin";
 import type {
   BashOperations,
   ExtensionAPI,
+  ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
 import { delimiter } from "node:path";
@@ -32,7 +33,7 @@ type FixtureState = {
   buildOptions: { outputDir: string; configDir?: string }[];
   startBarrier: PromiseWithResolvers<void> | null;
   closeBarrier: PromiseWithResolvers<void> | null;
-  vm: { close: () => Promise<void>; fs: object };
+  vm: { close: () => Promise<void>; fs: { mkdir: ReturnType<typeof mock.fn> } };
 };
 
 export const state: FixtureState = {
@@ -56,7 +57,7 @@ export const state: FixtureState = {
   buildOptions: [],
   startBarrier: null,
   closeBarrier: null,
-  vm: { close: async () => {}, fs: {} },
+  vm: { close: async () => {}, fs: { mkdir: mock.fn(async () => {}) } },
 };
 
 const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
@@ -106,7 +107,7 @@ beforeEach(async () => {
       state.closes++;
       await state.closeBarrier?.promise;
     },
-    fs: {},
+    fs: { mkdir: mock.fn(async () => {}) },
   };
 });
 afterEach(async () => {
@@ -278,7 +279,9 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
   const tools = new Map<string, RoutedTool>();
   const statuses: string[] = [];
   const notices: string[] = [];
-  const ctx = createContext(statuses, notices);
+  // Fixture replaces the SDK context boundary with only fields used in tests.
+  const ctx = createContext(statuses, notices) as FixtureContext &
+    ExtensionContext;
   // Host boundary supplies only APIs and context used by this extension.
   await extension({
     on: (name: keyof EventResults, handler: Handler) => {
