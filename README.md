@@ -51,6 +51,17 @@ pi --no-extensions -e /path/to/gondolin-rises
 
 Sandbox starts on. Run `/sandbox` inside pi to toggle off or on. Toggle waits for agent to become idle.
 
+When sandbox is on, optional `gondolin-rises.json` in Pi's agent config directory (`~/.pi/agent` by default; honors `PI_CODING_AGENT_DIR`) lists extra host directories to mount. Paths resolve relative to that config file and mount at the same guest path. All sandbox tools can read and write through them. For example, mount `~/.agents`:
+
+```json
+{
+  "_version": 0,
+  "mounts": ["../../.agents"]
+}
+```
+
+No config means no extra mounts. Invalid config blocks sandbox startup. CWD and configured mounts must resolve inside your home directory or host temp directory (`os.tmpdir()`), including either directory itself. Mounted directories are writable from guest commands. Gondolin blocks host symlink targets outside each mount root on access, even if target is elsewhere in home. No recursive symlink scan or symlink warnings. Guest VM files outside home remain accessible.
+
 When off, `read`, `write`, `edit`, `bash`, and user `!` commands run directly on host, without VM isolation. Status and notification show current state.
 
 VM stays alive while off, gets reused when on, and closes on session shutdown. Failed startup never falls back to host; toggle off explicitly for host execution, or retry startup.
@@ -84,7 +95,8 @@ Cache: `$XDG_CACHE_HOME/gondolin-rises/images` (default: `~/.cache/gondolin-rise
 
 Runtime owners:
 - `src/index.ts`: pi registration, events, toggle, and prompt wiring.
-- `src/config.ts`: optional upstream build-config loading and validation.
+- `src/build-config.ts`: optional upstream image build-config loading and validation.
+- `src/user-config.ts`: optional runtime mount config typing, validation, and path resolution.
 - `src/images.ts`: image build, validation, cache selection, and atomic activation. Startup never writes cache.
 - `src/operations.ts`: VM filesystem and bash adapters; current path policy unchanged.
 - `src/sandbox.ts`: VM startup, reuse, and idempotent shutdown, including pending startup.

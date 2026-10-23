@@ -9,9 +9,6 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 export function guestWorkspacePath(localCwd: string): string {
-  if (path.parse(localCwd).root === localCwd) {
-    throw new Error("cannot mount host filesystem root as Gondolin workspace");
-  }
   return localCwd.split(path.sep).join(path.posix.sep);
 }
 
@@ -20,15 +17,32 @@ function shQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function toGuestPath(localCwd: string, localPath: string): string {
+function isWithin(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === "" ||
+    (relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative))
+  );
+}
+
+function toGuestPath(
+  localCwd: string,
+  localPath: string,
+  additionalRoots: readonly string[] = [],
+): string {
   const resolved = path.resolve(localCwd, localPath);
-  const rel = path.relative(localCwd, resolved);
-  if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
-    throw new Error(`path escapes workspace: ${localPath}`);
-  }
-  // Guest mount path matches host CWD; convert platform separators to POSIX.
+  const root = [localCwd, ...additionalRoots].find((candidate) =>
+    isWithin(path.resolve(candidate), resolved),
+  );
+  if (!root) throw new Error(`path escapes workspace: ${localPath}`);
+
+  const resolvedRoot = path.resolve(root);
+  const rel = path.relative(resolvedRoot, resolved);
+  // Guest mount path matches host path; convert platform separators to POSIX.
   return path.posix.join(
-    guestWorkspacePath(localCwd),
+    guestWorkspacePath(resolvedRoot),
     rel.split(path.sep).join(path.posix.sep),
   );
 }
@@ -36,16 +50,19 @@ function toGuestPath(localCwd: string, localPath: string): string {
 export function createGondolinReadOps(
   vm: VM,
   localCwd: string,
+  additionalRoots: readonly string[] = [],
 ): ReadOperations {
   return {
     readFile: async (p) => {
-      return vm.fs.readFile(toGuestPath(localCwd, p));
+      return vm.fs.readFile(toGuestPath(localCwd, p, additionalRoots));
     },
     access: async (p) => {
-      await vm.fs.access(toGuestPath(localCwd, p), { mode: fsConstants.R_OK });
+      await vm.fs.access(toGuestPath(localCwd, p, additionalRoots), {
+        mode: fsConstants.R_OK,
+      });
     },
     detectImageMimeType: async (p) => {
-      const guestPath = toGuestPath(localCwd, p);
+      const guestPath = toGuestPath(localCwd, p, additionalRoots);
       try {
         // Run through the shell because `file` might live in `/usr/bin` depending on the image
         const r = await vm.exec([
@@ -70,17 +87,20 @@ export function createGondolinReadOps(
 export function createGondolinWriteOps(
   vm: VM,
   localCwd: string,
+  additionalRoots: readonly string[] = [],
 ): WriteOperations {
   return {
     // Use the VM filesystem API rather than a shell round-trip: it streams the
     // content, so there is no argv size limit and no quoting to get wrong.
     writeFile: async (p, content) => {
-      const guestPath = toGuestPath(localCwd, p);
+      const guestPath = toGuestPath(localCwd, p, additionalRoots);
       await vm.fs.mkdir(path.posix.dirname(guestPath), { recursive: true });
       await vm.fs.writeFile(guestPath, content);
     },
     mkdir: async (dir) => {
-      await vm.fs.mkdir(toGuestPath(localCwd, dir), { recursive: true });
+      await vm.fs.mkdir(toGuestPath(localCwd, dir, additionalRoots), {
+        recursive: true,
+      });
     },
   };
 }
@@ -88,9 +108,10 @@ export function createGondolinWriteOps(
 export function createGondolinEditOps(
   vm: VM,
   localCwd: string,
+  additionalRoots: readonly string[] = [],
 ): EditOperations {
-  const r = createGondolinReadOps(vm, localCwd);
-  const w = createGondolinWriteOps(vm, localCwd);
+  const r = createGondolinReadOps(vm, localCwd, additionalRoots);
+  const w = createGondolinWriteOps(vm, localCwd, additionalRoots);
   return { readFile: r.readFile, access: r.access, writeFile: w.writeFile };
 }
 

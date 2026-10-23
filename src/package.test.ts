@@ -15,12 +15,13 @@ test("package includes every runtime module", async () => {
   const [{ files }]: { files: { path: string }[] }[] = JSON.parse(stdout);
   const paths = files.map((file) => file.path);
   assert.deepEqual(paths.filter((p) => p.startsWith("src/")).sort(), [
-    "src/config.ts",
+    "src/build-config.ts",
     "src/dependencies.ts",
     "src/images.ts",
     "src/index.ts",
     "src/operations.ts",
     "src/sandbox.ts",
+    "src/user-config.ts",
   ]);
   assert.equal(
     paths.some((p) => p.endsWith(".test.ts")),

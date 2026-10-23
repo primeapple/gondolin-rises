@@ -1,3 +1,6 @@
+import { realpathSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   type BuildConfig,
   RealFSProvider,
@@ -13,7 +16,9 @@ import { guestWorkspacePath } from "./operations.ts";
 export function createSandbox(
   localCwd: string,
   config: BuildConfig | null,
+  configuredMounts: readonly string[],
   configError?: string,
+  mountsError?: string,
 ) {
   let vm: VM | null = null;
   let vmStarting: Promise<VM> | null = null;
@@ -27,6 +32,10 @@ export function createSandbox(
     if (vmStarting) return vmStarting;
 
     vmStarting = (async () => {
+      if (mountsError) {
+        ctx?.ui.notify(mountsError, "error");
+        throw new Error(mountsError);
+      }
       const mountPath = guestWorkspacePath(localCwd);
       ctx?.ui.setStatus(
         "gondolin",
@@ -59,13 +68,38 @@ export function createSandbox(
       }
 
       if (stopped) throw new Error("Gondolin sandbox shut down");
+      let mounts: Record<string, RealFSProvider>;
+      try {
+        const allowedRoots = [os.homedir(), os.tmpdir()].map((root) =>
+          realpathSync(root),
+        );
+        mounts = Object.fromEntries(
+          [localCwd, ...configuredMounts].map((hostPath) => {
+            const provider = new RealFSProvider(hostPath);
+            const allowed = allowedRoots.some((root) => {
+              const relative = path.relative(root, provider.rootPath);
+              return (
+                relative !== ".." &&
+                !relative.startsWith(`..${path.sep}`) &&
+                !path.isAbsolute(relative)
+              );
+            });
+            if (!allowed) {
+              throw new Error(
+                `Cannot mount ${hostPath}: resolves outside user home and temp directory (${allowedRoots.join(", ")}). Use a directory inside home or temp.`,
+              );
+            }
+            return [guestWorkspacePath(hostPath), provider];
+          }),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx?.ui.notify(message, "error");
+        throw error;
+      }
       const created = await VM.create({
         ...(imagePath ? { sandbox: { imagePath } } : {}),
-        vfs: {
-          mounts: {
-            [mountPath]: new RealFSProvider(localCwd),
-          },
-        },
+        vfs: { mounts },
       });
 
       vm = created;

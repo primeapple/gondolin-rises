@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { mock, test } from "node:test";
 import { checkTools, prompt, setup, state } from "./test-fixtures.ts";
 
@@ -13,6 +14,17 @@ test("extension does not rewrite existing config", async () => {
   await writeFile(state.configFile, existing);
   await setup();
   assert.equal(await readFile(state.configFile, "utf8"), existing);
+});
+
+test("invalid mount config blocks VM startup", async () => {
+  await writeFile(
+    path.join(state.configDir, "gondolin-rises.json"),
+    '{"_version":0,"mounts":["missing"]}',
+  );
+  const h = await setup();
+  await assert.rejects(h.emit("session_start"), /gondolin-rises.json/);
+  assert.equal(state.starts, 0);
+  assert.match(h.notices.join("\n"), /gondolin-rises.json/);
 });
 
 test("startup reports missing runtime dependencies without starting VM", async () => {

@@ -9,7 +9,8 @@ import {
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { assertHostDependencies } from "./dependencies.ts";
-import { loadConfig } from "./config.ts";
+import { loadBuildConfig } from "./build-config.ts";
+import { loadUserConfig, type UserConfig } from "./user-config.ts";
 import { rebuildImage } from "./images.ts";
 import {
   createGondolinBashOps,
@@ -24,10 +25,18 @@ export default async function (pi: ExtensionAPI) {
   let config: BuildConfig | null = null;
   let configError: Error | undefined;
   try {
-    config = await loadConfig(agentDir);
+    config = await loadBuildConfig(agentDir);
   } catch (error) {
     configError = error instanceof Error ? error : new Error(String(error));
   }
+  let userConfig: UserConfig | null = null;
+  let userConfigError: Error | undefined;
+  try {
+    userConfig = await loadUserConfig(agentDir);
+  } catch (error) {
+    userConfigError = error instanceof Error ? error : new Error(String(error));
+  }
+  const mounts = userConfig?.mounts ?? [];
   const localCwd = process.cwd();
 
   const localRead = createReadTool(localCwd);
@@ -44,7 +53,9 @@ export default async function (pi: ExtensionAPI) {
   const { ensureVm, close } = createSandbox(
     localCwd,
     config,
+    mounts,
     configError?.message,
+    userConfigError?.message,
   );
 
   pi.registerCommand("sandbox", {
@@ -112,7 +123,7 @@ export default async function (pi: ExtensionAPI) {
         return localRead.execute(id, params, signal, onUpdate);
       const activeVm = await ensureVm(ctx);
       const tool = createReadTool(localCwd, {
-        operations: createGondolinReadOps(activeVm, localCwd),
+        operations: createGondolinReadOps(activeVm, localCwd, mounts),
       });
       return tool.execute(id, params, signal, onUpdate);
     },
@@ -125,7 +136,7 @@ export default async function (pi: ExtensionAPI) {
         return localWrite.execute(id, params, signal, onUpdate);
       const activeVm = await ensureVm(ctx);
       const tool = createWriteTool(localCwd, {
-        operations: createGondolinWriteOps(activeVm, localCwd),
+        operations: createGondolinWriteOps(activeVm, localCwd, mounts),
       });
       return tool.execute(id, params, signal, onUpdate);
     },
@@ -138,7 +149,7 @@ export default async function (pi: ExtensionAPI) {
         return localEdit.execute(id, params, signal, onUpdate);
       const activeVm = await ensureVm(ctx);
       const tool = createEditTool(localCwd, {
-        operations: createGondolinEditOps(activeVm, localCwd),
+        operations: createGondolinEditOps(activeVm, localCwd, mounts),
       });
       return tool.execute(id, params, signal, onUpdate);
     },

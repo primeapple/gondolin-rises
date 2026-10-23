@@ -12,6 +12,9 @@ import path from "node:path";
 import { afterEach, beforeEach, mock } from "node:test";
 
 type FixtureState = {
+  testDir: string;
+  homeDir: string;
+  tempDir: string;
   configDir: string;
   configFile: string;
   cacheHome: string;
@@ -33,6 +36,9 @@ type FixtureState = {
 };
 
 export const state: FixtureState = {
+  testDir: "",
+  homeDir: "",
+  tempDir: "",
   configDir: "",
   configFile: "",
   cacheHome: "",
@@ -55,8 +61,21 @@ export const state: FixtureState = {
 
 const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
 const originalPath = process.env.PATH;
+const originalCwd = process.cwd();
+let homeMock: ReturnType<typeof mock.method>;
+let tempMock: ReturnType<typeof mock.method>;
 beforeEach(async () => {
-  state.configDir = await mkdtemp(path.join(os.tmpdir(), "gondolin-rises-"));
+  state.testDir = await mkdtemp(path.join(os.tmpdir(), "gondolin-rises-"));
+  state.homeDir = path.join(state.testDir, "home");
+  state.tempDir = path.join(state.testDir, "temp");
+  await mkdir(state.tempDir);
+  tempMock = mock.method(os, "tmpdir", () => state.tempDir);
+  state.configDir = path.join(state.homeDir, ".pi", "agent");
+  await mkdir(state.configDir, { recursive: true });
+  const workspace = path.join(state.homeDir, "project");
+  await mkdir(workspace);
+  process.chdir(workspace);
+  homeMock = mock.method(os, "homedir", () => state.homeDir);
   const fakeBin = path.join(state.configDir, "bin");
   await mkdir(fakeBin);
   for (const command of [
@@ -91,7 +110,10 @@ beforeEach(async () => {
   };
 });
 afterEach(async () => {
-  await rm(state.configDir, { recursive: true, force: true });
+  process.chdir(originalCwd);
+  homeMock.mock.restore();
+  tempMock.mock.restore();
+  await rm(state.testDir, { recursive: true, force: true });
   if (originalXdgCacheHome === undefined) delete process.env.XDG_CACHE_HOME;
   else process.env.XDG_CACHE_HOME = originalXdgCacheHome;
   if (originalPath === undefined) delete process.env.PATH;
@@ -111,7 +133,7 @@ function tool(name: string, cwd: string, options: ToolOptions = {}) {
   };
 }
 
-const { validateBuildConfig, parseBuildConfig } = await import(
+const { validateBuildConfig, parseBuildConfig, RealFSProvider } = await import(
   "@earendil-works/gondolin"
 );
 mock.module("@earendil-works/pi-coding-agent", {
@@ -134,7 +156,7 @@ mock.module("@earendil-works/gondolin", {
       if (state.sessionError) throw new Error("session query failed");
       return state.sessions;
     },
-    RealFSProvider: class {},
+    RealFSProvider,
     VM: {
       create: async (options: VMOptions) => {
         state.starts++;
@@ -297,7 +319,9 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
 }
 
 export const prompt = {
-  systemPrompt: `Current working directory: ${process.cwd()}`,
+  get systemPrompt() {
+    return `Current working directory: ${process.cwd()}`;
+  },
 };
 export async function checkTools(
   harness: Awaited<ReturnType<typeof setup>>,

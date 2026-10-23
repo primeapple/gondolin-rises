@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
+import os from "node:os";
 import { test } from "node:test";
 import path from "node:path";
 import type { ExecOptions, VM } from "@earendil-works/gondolin";
-import { createGondolinBashOps, guestWorkspacePath } from "./operations.ts";
+import {
+  createGondolinBashOps,
+  createGondolinEditOps,
+  createGondolinReadOps,
+  createGondolinWriteOps,
+  guestWorkspacePath,
+} from "./operations.ts";
 
 type FakeVm = { exec: (args: string[], options: ExecOptions) => unknown };
 function bashOps(vm: FakeVm) {
@@ -11,11 +18,45 @@ function bashOps(vm: FakeVm) {
   return createGondolinBashOps(vm as unknown as VM, process.cwd());
 }
 
-test("refuses to mount host filesystem root", () => {
-  assert.throws(
-    () => guestWorkspacePath(path.parse(process.cwd()).root),
-    /cannot mount host filesystem root/,
-  );
+test("file tools allow paths through configured home directory", async () => {
+  const cwd = process.cwd();
+  const home = os.homedir();
+  const target = path.join(home, "shared", "file.txt");
+  const guestTarget = guestWorkspacePath(target);
+  const guestParent = path.posix.dirname(guestTarget);
+  const calls: string[] = [];
+  const vm = {
+    fs: {
+      access: async (p: string) => {
+        calls.push(`access:${p}`);
+      },
+      readFile: async (p: string) => {
+        calls.push(`read:${p}`);
+        return Buffer.from("content");
+      },
+      mkdir: async (p: string) => {
+        calls.push(`mkdir:${p}`);
+      },
+      writeFile: async (p: string) => {
+        calls.push(`write:${p}`);
+      },
+    },
+  } as unknown as VM;
+  await createGondolinReadOps(vm, cwd, [home]).readFile(target);
+  await createGondolinWriteOps(vm, cwd, [home]).writeFile(target, "new");
+  const edit = createGondolinEditOps(vm, cwd, [home]);
+  await edit.access(target);
+  await edit.readFile(target);
+  await edit.writeFile(target, "edited");
+  assert.deepEqual(calls, [
+    `read:${guestTarget}`,
+    `mkdir:${guestParent}`,
+    `write:${guestTarget}`,
+    `access:${guestTarget}`,
+    `read:${guestTarget}`,
+    `mkdir:${guestParent}`,
+    `write:${guestTarget}`,
+  ]);
 });
 
 test("pre-aborted bash never starts VM execution", async () => {
@@ -38,6 +79,76 @@ test("pre-aborted bash never starts VM execution", async () => {
     /^Error: aborted$/,
   );
   assert.equal(executions, 0);
+});
+
+test("write and edit use guest path for additional mounted roots", async () => {
+  const cwd = process.cwd();
+  const agents = path.join(path.dirname(cwd), ".agents");
+  const paths: string[] = [];
+  const vm = {
+    fs: {
+      access: async (p: string) => paths.push(`access:${p}`),
+      readFile: async (p: string) => {
+        paths.push(`read:${p}`);
+        return Buffer.from("skill content");
+      },
+      mkdir: async (p: string) => paths.push(`mkdir:${p}`),
+      writeFile: async (p: string) => paths.push(`write:${p}`),
+    },
+  };
+  const skillPath = path.join(agents, "SKILL.md");
+  const guestSkillPath = path.posix.join(
+    guestWorkspacePath(agents),
+    "SKILL.md",
+  );
+
+  await createGondolinWriteOps(vm as unknown as VM, cwd, [agents]).writeFile(
+    skillPath,
+    "updated",
+  );
+  const edit = createGondolinEditOps(vm as unknown as VM, cwd, [agents]);
+  await edit.access(skillPath);
+  await edit.readFile(skillPath);
+  await edit.writeFile(skillPath, "edited");
+
+  assert.deepEqual(paths, [
+    `mkdir:${guestWorkspacePath(agents)}`,
+    `write:${guestSkillPath}`,
+    `access:${guestSkillPath}`,
+    `read:${guestSkillPath}`,
+    `mkdir:${guestWorkspacePath(agents)}`,
+    `write:${guestSkillPath}`,
+  ]);
+});
+
+test("read uses guest path for additional mounted roots, but rejects others", async () => {
+  const cwd = process.cwd();
+  const agents = path.join(path.dirname(cwd), ".agents");
+  const guestPaths: string[] = [];
+  const vm = {
+    fs: {
+      access: async (p: string) => {
+        guestPaths.push(p);
+      },
+      readFile: async (p: string) => {
+        guestPaths.push(p);
+        return Buffer.from("skill content");
+      },
+    },
+  };
+  const ops = createGondolinReadOps(vm as unknown as VM, cwd, [agents]);
+  const skillPath = path.join(agents, "SKILL.md");
+
+  await ops.access(skillPath);
+  assert.equal((await ops.readFile(skillPath)).toString(), "skill content");
+  assert.deepEqual(guestPaths, [
+    path.posix.join(guestWorkspacePath(agents), "SKILL.md"),
+    path.posix.join(guestWorkspacePath(agents), "SKILL.md"),
+  ]);
+  await assert.rejects(
+    ops.readFile(path.join(path.dirname(agents), "secret.txt")),
+    /path escapes workspace/,
+  );
 });
 
 function waitingVm(started?: PromiseWithResolvers<AbortSignal>): FakeVm {

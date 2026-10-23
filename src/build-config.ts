@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { type BuildConfig, parseBuildConfig } from "@earendil-works/gondolin";
 
-export async function loadConfig(
+export async function loadBuildConfig(
   agentDir: string,
 ): Promise<BuildConfig | null> {
   const configPath = path.join(agentDir, "gondolin-build-config.json");
