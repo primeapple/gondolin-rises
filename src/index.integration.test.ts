@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { mock, test } from "node:test";
@@ -42,13 +42,24 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
     path.join(os.tmpdir(), "gondolin-integration-"),
   );
   const originalCwd = process.cwd();
+  const originalPath = process.env.PATH;
+  t.after(async () => {
+    process.chdir(originalCwd);
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    await rm(workspace, { recursive: true, force: true });
+  });
+  const fakeBin = path.join(workspace, "bin");
+  await mkdir(fakeBin);
+  for (const command of ["qemu-system-aarch64", "qemu-system-x86_64", "qemu-img"]) {
+    const executable = path.join(fakeBin, command);
+    await writeFile(executable, "#!/bin/sh\nexit 1\n");
+    await chmod(executable, 0o755);
+  }
+  process.env.PATH = fakeBin;
   process.chdir(workspace);
   const guestCwd = process.cwd();
   agentDir = path.join(workspace, "agent");
-  t.after(async () => {
-    process.chdir(originalCwd);
-    await rm(workspace, { recursive: true, force: true });
-  });
 
   const files = new Map([
     [path.join(guestCwd, "example.txt"), Buffer.from("guest original\n")],

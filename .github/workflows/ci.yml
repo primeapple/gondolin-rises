@@ -21,7 +21,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils
       - run: npm test
       - run: npm run typecheck
       - run: npm run lint

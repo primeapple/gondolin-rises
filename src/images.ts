@@ -150,8 +150,16 @@ export async function rebuildImage(
     await rm(outputDir, { recursive: true, force: true });
     throw error;
   }
-  if (previous?.buildId)
-    await rm(imagePath(imagesDir, previous), { recursive: true, force: true });
+  if (previous?.buildId) {
+    const previousPath = imagePath(imagesDir, previous);
+    try {
+      await rm(previousPath, { recursive: true, force: true });
+    } catch (error) {
+      console.warn(
+        `Warning: New Gondolin image is active at ${outputDir}; old image cleanup failed at ${previousPath}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   return outputDir;
 }
 

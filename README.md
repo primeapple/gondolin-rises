@@ -120,7 +120,7 @@ Missing or stale custom image warns: "Warning: Custom Gondolin image is outdated
 
 `pi --update-gondolin-image --print` always rebuilds valid config, even when unchanged. Missing config does nothing; invalid config fails update. Any live Gondolin session blocks rebuild, including unrelated sessions and VMs retained while `/sandbox` is off. Close sessions before updating. Session check uses Gondolin `listSessions()`; no usage tracking or locking.
 
-Cache: `$XDG_CACHE_HOME/gondolin-rises/images` (default: `~/.cache/gondolin-rises/images`). Build and validate replacement before switching active pointer; remove replaced image afterward. Failed builds retain old image and remove failed build output. Only one completed custom image remains after successful rebuild, excluding untouched legacy cache entries. Valid active custom image takes precedence over `GONDOLIN_GUEST_DIR` and `GONDOLIN_DEFAULT_IMAGE`. Removing config selects default but leaves cache untouched.
+Cache: `$XDG_CACHE_HOME/gondolin-rises/images` (default: `~/.cache/gondolin-rises/images`). Build and validate replacement before switching active pointer; remove replaced image afterward. Failed builds retain old image and remove failed build output. Pointer switch commits update. If old-image cleanup fails, update still reports success and warns with old path and error; new image stays active. Only one completed custom image remains after successful cleanup, excluding untouched legacy cache entries. Valid active custom image takes precedence over `GONDOLIN_GUEST_DIR` and `GONDOLIN_DEFAULT_IMAGE`. Removing config selects default but leaves cache untouched.
 
 ## Development
 
@@ -142,7 +142,7 @@ npm run lint
 npm run format:check
 ```
 
-Tests use Node.js `node:test`, written in TypeScript beside source files in `src/`. Node.js runs tests with native type stripping; `npm run typecheck` checks source, tests, and fixtures. Tests and fixtures stay out of published package. Integration test executes real pi tools with fake Gondolin VM; no LLM calls, image downloads, or QEMU needed. Development pins pi `1.3.0` as tested API baseline; host supplies pi at runtime, following pi's wildcard peer convention. Other dependencies use version ranges. Runtime and pi API dependency updates need human review.
+Tests use Node.js `node:test`, written in TypeScript beside source files in `src/`. Node.js runs tests with native type stripping; `npm run typecheck` checks source, tests, and fixtures. Tests and fixtures stay out of published package. Integration test executes real pi tools with fake Gondolin VM and isolated fake executable prerequisites; no LLM calls, image downloads, or QEMU needed. Development pins pi `1.3.0` as tested API baseline; host supplies pi at runtime, following pi's wildcard peer convention. Other dependencies use version ranges. Runtime and pi API dependency updates need human review.
 
 ## License
 
