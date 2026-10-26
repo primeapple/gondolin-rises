@@ -29,6 +29,8 @@ Optional `gondolin-build-config.json` in pi config directory uses upstream Gondo
 
 Optional `gondolin-rises.json` in pi config directory controls extra host mounts, separate from image build config. Never create or rewrite config. Missing file means no extra mounts. Require `_version: 0` and `mounts` array of relative directory paths. Resolve each path against config file directory; reject absolute paths and missing/non-directory paths. Allow symlinks only when mount root resolves inside user's home directory or host temp directory, including either directory itself. Mount each resolved host directory at same absolute guest path. No symlink warnings or recursive symlink scan. Invalid or unreadable config fails sandbox startup with actionable error; never start VM with partial mount list.
 
+Optional `secrets` object maps guest environment variable names to `{ hostEnv, hosts }`. `hostEnv` names host environment variable holding secret value; never store secret values in config. `hosts` lists host patterns where Gondolin may substitute that secret. Read host values at sandbox startup; unset or empty value fails startup with actionable error and never starts VM. Use `createHttpHooks` for these definitions and pass both returned `env` placeholders and `httpHooks` to VM. Never pass real secret values into guest environment. Do not configure global `allowedHosts` or other `createHttpHooks` options. Per-secret `hosts` limits secret substitution only; it does not restrict general network access. Invalid or unreadable config fails sandbox startup with actionable error.
+
 
 ### Sandbox instructions
 
