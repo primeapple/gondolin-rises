@@ -1,4 +1,6 @@
 /** Run pi file and shell tools inside Gondolin; mount host project at its CWD. */
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { type BuildConfig, listSessions } from "@earendil-works/gondolin";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
@@ -30,9 +32,25 @@ export default async function (pi: ExtensionAPI) {
     configError = error instanceof Error ? error : new Error(String(error));
   }
   let userConfig: UserConfig | null = null;
+  let sandboxInstructions: { path: string; content: string } | undefined;
   let userConfigError: Error | undefined;
   try {
     userConfig = await loadUserConfig(agentDir);
+    if (userConfig?.sandboxAgentsFile) {
+      try {
+        sandboxInstructions = {
+          path: userConfig.sandboxAgentsFile,
+          content: (
+            await readFile(userConfig.sandboxAgentsFile, "utf8")
+          ).replace(/^\uFEFF/, ""),
+        };
+      } catch (error) {
+        throw new Error(
+          `Cannot read sandboxAgentsFile: ${userConfig.sandboxAgentsFile}`,
+          { cause: error },
+        );
+      }
+    }
   } catch (error) {
     userConfigError = error instanceof Error ? error : new Error(String(error));
   }
@@ -175,14 +193,24 @@ export default async function (pi: ExtensionAPI) {
     return { operations: createGondolinBashOps(activeVm, localCwd) };
   });
 
-  // Replace the CWD line so the model sees the guest path and VM marker.
+  // Instruction selection stays fixed even when tool execution switches to host.
   pi.on("before_agent_start", async (event, ctx) => {
-    if (!sandboxEnabled) return;
+    if (sandboxInstructions) {
+      event.systemPromptOptions.contextFiles = [
+        sandboxInstructions,
+        ...event.systemPromptOptions.contextFiles.filter(
+          (file) =>
+            path.resolve(path.dirname(file.path)) !== path.resolve(agentDir),
+        ),
+      ];
+    }
+    if (!sandboxEnabled) {
+      return sandboxInstructions
+        ? { systemPrompt: event.systemPrompt }
+        : undefined;
+    }
     await ensureVm(ctx);
-    const modified = event.systemPrompt.replace(
-      `Current working directory: ${localCwd}`,
-      `Current working directory: ${localCwd} (Gondolin VM, mounted from host: ${localCwd})`,
-    );
-    return { systemPrompt: modified };
+    event.systemPromptOptions.sections.cwd = `${localCwd} (Gondolin VM, mounted from host: ${localCwd})`;
+    return { systemPrompt: event.systemPrompt };
   });
 }

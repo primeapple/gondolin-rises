@@ -64,6 +64,22 @@ No config means no extra mounts. Invalid config blocks sandbox startup. CWD and 
 
 When off, `read`, `write`, `edit`, `bash`, and user `!` commands run directly on host, without VM isolation. Status and notification show current state.
 
+### Sandbox instructions
+
+Optional `sandboxAgentsFile` in `gondolin-rises.json` selects replacement global instructions:
+
+```json
+{
+  "_version": 0,
+  "mounts": [],
+  "sandboxAgentsFile": "./SANDBOX_AGENTS.md"
+}
+```
+
+Path must be relative to Pi's agent config directory (`~/.pi/agent` by default; honors `PI_CODING_AGENT_DIR`). Extension reads file from host at startup; no mount or image rebuild needed. Missing, non-file, or unreadable configured target blocks sandbox startup. Unset field keeps normal global instructions. Empty file suppresses normal global instructions.
+
+Configured sandbox instruction file replaces normal global instructions; contents are not appended or supplied alongside normal global instructions. Project instructions remain unchanged. Instruction selection happens at startup. Enabling or disabling sandbox during session changes tool execution only; instructions remain selected at startup.
+
 ### Custom images
 
 Optional `gondolin-build-config.json` in Pi's agent config directory (default: `~/.pi/agent`) uses [upstream Gondolin build-config format](https://earendil-works.github.io/gondolin/custom-images/). Extension honors `PI_CODING_AGENT_DIR`. Generate starting config with Gondolin CLI, then edit packages or other build settings:

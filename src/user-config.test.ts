@@ -74,3 +74,44 @@ test("user config rejects invalid version, paths, and mount targets", async (t) 
     await assert.rejects(loadUserConfig(dir), /Invalid.*gondolin-rises.json/);
   }
 });
+
+test("user config resolves optional sandbox instruction path without rewriting files", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(path.join(dir, "SANDBOX_AGENTS.md"), "Sandbox rules\n");
+  const file = path.join(dir, "gondolin-rises.json");
+  const content =
+    '{"_version":0,"mounts":[],"sandboxAgentsFile":"./SANDBOX_AGENTS.md"}\n';
+  await writeFile(file, content);
+  assert.deepEqual(await loadUserConfig(dir), {
+    _version: 0,
+    mounts: [],
+    sandboxAgentsFile: path.join(dir, "SANDBOX_AGENTS.md"),
+  });
+  assert.equal(await readFile(file, "utf8"), content);
+  assert.equal(
+    await readFile(path.join(dir, "SANDBOX_AGENTS.md"), "utf8"),
+    "Sandbox rules\n",
+  );
+});
+
+test("user config rejects invalid sandbox instruction paths and targets", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "gondolin-rises.json");
+  for (const sandboxAgentsFile of [
+    null,
+    1,
+    [],
+    "",
+    path.join(dir, "AGENTS.md"),
+    "missing.md",
+    ".",
+  ]) {
+    await writeFile(
+      file,
+      JSON.stringify({ _version: 0, mounts: [], sandboxAgentsFile }),
+    );
+    await assert.rejects(loadUserConfig(dir), /Invalid.*gondolin-rises.json/);
+  }
+});

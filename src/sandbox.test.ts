@@ -38,12 +38,11 @@ test("mounts CWD and configured host directory at same guest paths", async () =>
     guestWorkspacePath(hostMount),
   ]);
 
-  const result = await h.emit("before_agent_start", {
-    systemPrompt: `Current working directory: ${cwd}`,
-  });
-  assert.equal(
-    result?.systemPrompt,
-    `Current working directory: ${cwd} (Gondolin VM, mounted from host: ${cwd})`,
+  const result = await h.emit("before_agent_start", prompt);
+  assert.ok(
+    result?.systemPrompt.includes(
+      `<cwd>\n${cwd} (Gondolin VM, mounted from host: ${cwd})\n</cwd>`,
+    ),
   );
   await h.emit("session_shutdown");
 });

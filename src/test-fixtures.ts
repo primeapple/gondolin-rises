@@ -137,6 +137,9 @@ function tool(name: string, cwd: string, options: ToolOptions = {}) {
 const { validateBuildConfig, parseBuildConfig, RealFSProvider } = await import(
   "@earendil-works/gondolin"
 );
+const { buildSystemPrompt, normalizeBuildSystemPromptOptions } = await import(
+  "../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js"
+);
 mock.module("@earendil-works/pi-coding-agent", {
   namedExports: {
     ...Object.fromEntries(
@@ -311,6 +314,19 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
     ): Promise<EventResults[Name]> => {
       const handler = events.get(name);
       assert.ok(handler, `Missing handler: ${name}`);
+      if (name === "before_agent_start") {
+        // Match Pi runner: fresh mutable options, dynamically rendered prompt.
+        const options = normalizeBuildSystemPromptOptions(
+          (event as typeof prompt).systemPromptOptions,
+        );
+        event = {
+          ...event,
+          systemPromptOptions: options,
+          get systemPrompt() {
+            return buildSystemPrompt(options);
+          },
+        };
+      }
       return (await handler(event, ctx)) as EventResults[Name];
     },
     toggle: () => {
@@ -322,8 +338,8 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
 }
 
 export const prompt = {
-  get systemPrompt() {
-    return `Current working directory: ${process.cwd()}`;
+  get systemPromptOptions() {
+    return normalizeBuildSystemPromptOptions({ cwd: process.cwd() });
   },
 };
 export async function checkTools(
