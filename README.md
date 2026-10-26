@@ -62,6 +62,23 @@ When sandbox is on, optional `gondolin-rises.json` in Pi's agent config director
 
 No config means no extra mounts. Invalid config blocks sandbox startup. CWD and configured mounts must resolve inside your home directory or host temp directory (`os.tmpdir()`), including either directory itself. Mounted directories are writable from guest commands. Gondolin blocks host symlink targets outside each mount root on access, even if target is elsewhere in home. No recursive symlink scan or symlink warnings. Guest VM files outside home remain accessible.
 
+Configure HTTP secrets in the same file by mapping guest environment variable names to host environment variables and allowed substitution hosts:
+
+```json
+{
+  "_version": 0,
+  "mounts": [],
+  "secrets": {
+    "GH_TOKEN": {
+      "hostEnv": "GITHUB_TOKEN",
+      "hosts": ["api.github.com"]
+    }
+  }
+}
+```
+
+Set `GITHUB_TOKEN` in pi's host environment. Guest sees placeholder in `GH_TOKEN`; Gondolin substitutes real value into supported outbound request headers for listed hosts. Missing or empty credentials block sandbox startup. Guest variable names must match `[A-Za-z_][A-Za-z0-9_]*`; `HOME` is reserved. Per-secret `hosts` only limits token substitution; it does not restrict general network access. Tokens still grant guest code their full permissions at allowed hosts.
+
 When off, `read`, `write`, `edit`, `bash`, and user `!` commands run directly on host, without VM isolation. Status and notification show current state.
 
 ### Sandbox instructions

@@ -74,6 +74,7 @@ export default async function (pi: ExtensionAPI) {
     mounts,
     configError?.message,
     userConfigError?.message,
+    userConfig?.secrets,
   );
 
   pi.registerCommand("sandbox", {

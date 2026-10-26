@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { BuildConfig, VMOptions } from "@earendil-works/gondolin";
+import type { BuildConfig, HttpHooks, VMOptions } from "@earendil-works/gondolin";
 import type {
   BashOperations,
   ExtensionAPI,
@@ -24,6 +24,8 @@ type FixtureState = {
   builds: number;
   buildConfigs: BuildConfig[];
   vmOptions: VMOptions[];
+  httpHookOptions: unknown[];
+  httpHooks: HttpHooks | null;
   gondolinVersion: string;
   failStart: boolean;
   failBuild: boolean;
@@ -48,6 +50,8 @@ export const state: FixtureState = {
   builds: 0,
   buildConfigs: [],
   vmOptions: [],
+  httpHookOptions: [],
+  httpHooks: null,
   gondolinVersion: "v0.13.0",
   failStart: false,
   failBuild: false,
@@ -161,6 +165,20 @@ mock.module("@earendil-works/gondolin", {
       return state.sessions;
     },
     RealFSProvider,
+    createHttpHooks: (options: { secrets?: Record<string, { value: string }> }) => {
+      state.httpHookOptions.push(options);
+      const httpHooks: HttpHooks = {};
+      state.httpHooks = httpHooks;
+      return {
+        httpHooks,
+        env: Object.fromEntries(
+          Object.keys(options.secrets ?? {}).map((name) => [
+            name,
+            `placeholder:${name}`,
+          ]),
+        ),
+      };
+    },
     VM: {
       create: async (options: VMOptions) => {
         state.starts++;
@@ -273,6 +291,8 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
   state.buildConfigs = [];
   state.buildOptions = [];
   state.vmOptions = [];
+  state.httpHookOptions = [];
+  state.httpHooks = null;
   state.failStart = false;
   state.failBuild = false;
   state.failVerification = false;

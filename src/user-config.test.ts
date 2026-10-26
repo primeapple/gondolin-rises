@@ -75,6 +75,73 @@ test("user config rejects invalid version, paths, and mount targets", async (t) 
   }
 });
 
+test("user config resolves secret host environment mappings", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const secrets = {
+    GH_TOKEN: { hostEnv: "GITHUB_TOKEN", hosts: ["api.github.com"] },
+  };
+  await writeFile(
+    path.join(dir, "gondolin-rises.json"),
+    JSON.stringify({ _version: 0, mounts: [], secrets }),
+  );
+  assert.deepEqual(await loadUserConfig(dir), {
+    _version: 0,
+    mounts: [],
+    secrets,
+  });
+});
+
+test("user config rejects invalid guest secret environment names", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "gondolin-rises.json");
+  for (const name of [
+    "",
+    "GH=TOKEN",
+    "GH\u0000TOKEN",
+    "GH TOKEN",
+    "1TOKEN",
+    "GH-TOKEN",
+    "GH_TOKEN\n",
+  ]) {
+    await writeFile(
+      file,
+      JSON.stringify({
+        _version: 0,
+        mounts: [],
+        secrets: {
+          [name]: { hostEnv: "GITHUB_TOKEN", hosts: ["api.github.com"] },
+        },
+      }),
+    );
+    await assert.rejects(loadUserConfig(dir), {
+      message: `Invalid ${file}: invalid guest secret environment variable name: ${JSON.stringify(name)}`,
+    });
+  }
+});
+
+test("user config rejects invalid secret definitions", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "gondolin-rises.json");
+  for (const secrets of [
+    null,
+    [],
+    { GH_TOKEN: null },
+    { GH_TOKEN: { hostEnv: "", hosts: ["api.github.com"] } },
+    { GH_TOKEN: { hostEnv: "GITHUB_TOKEN", hosts: "api.github.com" } },
+    { GH_TOKEN: { hostEnv: "GITHUB_TOKEN", hosts: [1] } },
+    { HOME: { hostEnv: "TOKEN", hosts: ["api.github.com"] } },
+  ]) {
+    await writeFile(
+      file,
+      JSON.stringify({ _version: 0, mounts: [], secrets }),
+    );
+    await assert.rejects(loadUserConfig(dir), /Invalid.*gondolin-rises.json/);
+  }
+});
+
 test("user config resolves optional sandbox instruction path without rewriting files", async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
   t.after(() => rm(dir, { recursive: true, force: true }));

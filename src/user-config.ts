@@ -2,10 +2,16 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 /** Parsed user config; paths resolved against the agent config directory. */
+export interface UserSecret {
+  readonly hostEnv: string;
+  readonly hosts: readonly string[];
+}
+
 export interface UserConfig {
   readonly _version: 0;
   readonly mounts: readonly string[];
   readonly sandboxAgentsFile?: string;
+  readonly secrets?: Readonly<Record<string, UserSecret>>;
 }
 
 export async function loadUserConfig(
@@ -26,10 +32,11 @@ export async function loadUserConfig(
     if (!config || typeof config !== "object" || Array.isArray(config)) {
       throw new Error("expected a JSON object");
     }
-    const { _version, mounts, sandboxAgentsFile } = config as {
+    const { _version, mounts, sandboxAgentsFile, secrets } = config as {
       _version?: unknown;
       mounts?: unknown;
       sandboxAgentsFile?: unknown;
+      secrets?: unknown;
     };
     if (_version !== 0) throw new Error("_version must be 0");
     if (!Array.isArray(mounts)) throw new Error("mounts must be an array");
@@ -49,6 +56,44 @@ export async function loadUserConfig(
           `sandboxAgentsFile is not a file: ${sandboxAgentsFile}`,
         );
       }
+    }
+
+    let resolvedSecrets: Record<string, UserSecret> | undefined;
+    if (secrets !== undefined) {
+      if (!secrets || typeof secrets !== "object" || Array.isArray(secrets)) {
+        throw new Error("secrets must be an object");
+      }
+      const secretEntries: [string, UserSecret][] = [];
+      for (const [name, definition] of Object.entries(secrets)) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+          throw new Error(
+            `invalid guest secret environment variable name: ${JSON.stringify(name)}`,
+          );
+        }
+        if (name === "HOME") throw new Error("secrets.HOME is reserved");
+        if (
+          !definition ||
+          typeof definition !== "object" ||
+          Array.isArray(definition)
+        ) {
+          throw new Error(`secrets.${name} must be an object`);
+        }
+        const { hostEnv, hosts } = definition as {
+          hostEnv?: unknown;
+          hosts?: unknown;
+        };
+        if (typeof hostEnv !== "string" || hostEnv.length === 0) {
+          throw new Error(`secrets.${name}.hostEnv must be a non-empty string`);
+        }
+        if (
+          !Array.isArray(hosts) ||
+          hosts.some((host) => typeof host !== "string")
+        ) {
+          throw new Error(`secrets.${name}.hosts must be an array of strings`);
+        }
+        secretEntries.push([name, { hostEnv, hosts }]);
+      }
+      resolvedSecrets = Object.fromEntries(secretEntries);
     }
 
     const resolvedMounts: string[] = [];
@@ -73,6 +118,7 @@ export async function loadUserConfig(
       ...(resolvedSandboxAgentsFile === undefined
         ? {}
         : { sandboxAgentsFile: resolvedSandboxAgentsFile }),
+      ...(resolvedSecrets === undefined ? {} : { secrets: resolvedSecrets }),
     };
   } catch (error) {
     throw new Error(

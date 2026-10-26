@@ -3,8 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import {
   type BuildConfig,
+  type HttpHooks,
   RealFSProvider,
   VM,
+  createHttpHooks,
   getDefaultBuildConfig,
   loadAssetManifest,
 } from "@earendil-works/gondolin";
@@ -12,6 +14,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertHostDependencies } from "./dependencies.ts";
 import { getStartupImage } from "./images.ts";
 import { guestWorkspacePath } from "./operations.ts";
+import type { UserSecret } from "./user-config.ts";
 
 export function createSandbox(
   localCwd: string,
@@ -19,6 +22,7 @@ export function createSandbox(
   configuredMounts: readonly string[],
   configError?: string,
   mountsError?: string,
+  configuredSecrets: Readonly<Record<string, UserSecret>> = {},
 ) {
   let vm: VM | null = null;
   let vmStarting: Promise<VM> | null = null;
@@ -35,6 +39,32 @@ export function createSandbox(
       if (mountsError) {
         ctx?.ui.notify(mountsError, "error");
         throw new Error(mountsError);
+      }
+      let secretEnv: Record<string, string> = {};
+      let httpHooks: HttpHooks | undefined;
+      if (Object.keys(configuredSecrets).length > 0) {
+        try {
+          const secrets = Object.fromEntries(
+            Object.entries(configuredSecrets).map(
+              ([name, { hostEnv, hosts }]) => {
+                const value = process.env[hostEnv];
+                if (!value) {
+                  throw new Error(
+                    `Missing secret environment variable ${hostEnv} (configured for ${name})`,
+                  );
+                }
+                return [name, { value, hosts: [...hosts] }];
+              },
+            ),
+          );
+          const hooks = createHttpHooks({ secrets });
+          secretEnv = hooks.env;
+          httpHooks = hooks.httpHooks;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          ctx?.ui.notify(message, "error");
+          throw error;
+        }
       }
       const mountPath = guestWorkspacePath(localCwd);
       ctx?.ui.setStatus(
@@ -100,7 +130,8 @@ export function createSandbox(
       const homePath = guestWorkspacePath(os.homedir());
       const created = await VM.create({
         ...(imagePath ? { sandbox: { imagePath } } : {}),
-        env: { HOME: homePath },
+        ...(httpHooks ? { httpHooks } : {}),
+        env: { ...secretEnv, HOME: homePath },
         vfs: { mounts },
       });
 

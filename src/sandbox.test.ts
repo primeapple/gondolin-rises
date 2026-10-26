@@ -47,6 +47,78 @@ test("mounts CWD and configured host directory at same guest paths", async () =>
   await h.emit("session_shutdown");
 });
 
+test("injects secret placeholders and HTTP hooks into VM without exposing values", async () => {
+  const envName = "GONDOLIN_RISES_TEST_TOKEN";
+  const previous = process.env[envName];
+  process.env[envName] = "test-token-value";
+  try {
+    await writeFile(
+      path.join(state.configDir, "gondolin-rises.json"),
+      JSON.stringify({
+        _version: 0,
+        mounts: [],
+        secrets: {
+          GH_TOKEN: { hostEnv: envName, hosts: ["api.github.com"] },
+        },
+      }),
+    );
+    const h = await setup();
+    await h.emit("session_start");
+    assert.deepEqual(state.httpHookOptions, [
+      {
+        secrets: {
+          GH_TOKEN: {
+            value: "test-token-value",
+            hosts: ["api.github.com"],
+          },
+        },
+      },
+    ]);
+    assert.deepEqual(state.vmOptions[0].env, {
+      HOME: guestWorkspacePath(state.homeDir),
+      GH_TOKEN: "placeholder:GH_TOKEN",
+    });
+    assert.ok(state.httpHooks);
+    assert.strictEqual(state.vmOptions[0].httpHooks, state.httpHooks);
+    await h.emit("session_shutdown");
+  } finally {
+    if (previous === undefined) delete process.env[envName];
+    else process.env[envName] = previous;
+  }
+});
+
+test("missing or empty secret credential blocks VM startup", async () => {
+  const envName = "GONDOLIN_RISES_MISSING_TOKEN";
+  const previous = process.env[envName];
+  try {
+    await writeFile(
+      path.join(state.configDir, "gondolin-rises.json"),
+      JSON.stringify({
+        _version: 0,
+        mounts: [],
+        secrets: {
+          GH_TOKEN: { hostEnv: envName, hosts: ["api.github.com"] },
+        },
+      }),
+    );
+    for (const value of [undefined, ""] as const) {
+      if (value === undefined) delete process.env[envName];
+      else process.env[envName] = value;
+      const h = await setup();
+      await assert.rejects(
+        h.emit("session_start"),
+        new RegExp(`Missing secret environment variable ${envName}`),
+      );
+      assert.equal(state.starts, 0);
+      assert.match(h.notices.join("\n"), new RegExp(envName));
+      await h.emit("session_shutdown");
+    }
+  } finally {
+    if (previous === undefined) delete process.env[envName];
+    else process.env[envName] = previous;
+  }
+});
+
 test("root CWD remains blocked even with configured root mount", async () => {
   const h = await setup();
   const root = path.parse(process.cwd()).root;
