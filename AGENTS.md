@@ -10,4 +10,9 @@ Keep spec minimal: state required behavior and constraints; omit implementation 
 
 - Use test-driven development: write a failing test first, then implement the smallest change that makes it pass, then refactor.
 - Use Node.js built-in test runner (`node:test`) for unit tests.
-
+- Make sure to run the following tasks before finishing a change. They are also checked in the CI pipeline
+```sh
+npm run format
+npm run lint
+npm run typecheck
+```
