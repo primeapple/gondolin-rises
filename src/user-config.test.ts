@@ -134,10 +134,7 @@ test("user config rejects invalid secret definitions", async (t) => {
     { GH_TOKEN: { hostEnv: "GITHUB_TOKEN", hosts: [1] } },
     { HOME: { hostEnv: "TOKEN", hosts: ["api.github.com"] } },
   ]) {
-    await writeFile(
-      file,
-      JSON.stringify({ _version: 0, mounts: [], secrets }),
-    );
+    await writeFile(file, JSON.stringify({ _version: 0, mounts: [], secrets }));
     await assert.rejects(loadUserConfig(dir), /Invalid.*gondolin-rises.json/);
   }
 });

@@ -61,7 +61,8 @@ export function createSandbox(
           secretEnv = hooks.env;
           httpHooks = hooks.httpHooks;
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           ctx?.ui.notify(message, "error");
           throw error;
         }

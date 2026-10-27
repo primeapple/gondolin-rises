@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { mock, test } from "node:test";
@@ -51,7 +58,11 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
   });
   const fakeBin = path.join(workspace, "bin");
   await mkdir(fakeBin);
-  for (const command of ["qemu-system-aarch64", "qemu-system-x86_64", "qemu-img"]) {
+  for (const command of [
+    "qemu-system-aarch64",
+    "qemu-system-x86_64",
+    "qemu-img",
+  ]) {
     const executable = path.join(fakeBin, command);
     await writeFile(executable, "#!/bin/sh\nexit 1\n");
     await chmod(executable, 0o755);

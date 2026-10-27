@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import type { BuildConfig, HttpHooks, VMOptions } from "@earendil-works/gondolin";
+import type {
+  BuildConfig,
+  HttpHooks,
+  VMOptions,
+} from "@earendil-works/gondolin";
 import type {
   BashOperations,
   ExtensionAPI,
@@ -165,7 +169,9 @@ mock.module("@earendil-works/gondolin", {
       return state.sessions;
     },
     RealFSProvider,
-    createHttpHooks: (options: { secrets?: Record<string, { value: string }> }) => {
+    createHttpHooks: (options: {
+      secrets?: Record<string, { value: string }>;
+    }) => {
       state.httpHookOptions.push(options);
       const httpHooks: HttpHooks = {};
       state.httpHooks = httpHooks;

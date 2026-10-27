@@ -41,13 +41,19 @@ test("image update reports success and keeps new image active when old image cle
   const active = JSON.parse(await fs.readFile(pointerPath, "utf8"));
   assert.notEqual(active.buildId, previous.buildId);
   const activePath = path.join(imagesDir, active.imageKey, active.buildId);
-  assert.match(log.mock.calls[0].arguments[0], /Updated custom Gondolin image:/);
+  assert.match(
+    log.mock.calls[0].arguments[0],
+    /Updated custom Gondolin image:/,
+  );
   assert.ok(log.mock.calls[0].arguments[0].includes(activePath));
   assert.equal(warn.mock.callCount(), 1);
   const warning = warn.mock.calls[0].arguments[0];
   assert.match(warning, /Warning:.*active.*cleanup.*cleanup denied/);
   assert.ok(warning.includes(cleanupPath));
-  assert.equal(await fs.readFile(path.join(cleanupPath, "built"), "utf8"), "ok");
+  assert.equal(
+    await fs.readFile(path.join(cleanupPath, "built"), "utf8"),
+    "ok",
+  );
 
   const startup = await setup();
   await startup.emit("session_start");
