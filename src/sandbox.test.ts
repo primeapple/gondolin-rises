@@ -14,6 +14,48 @@ async function waitForVmStart() {
   assert.equal(state.starts, 1);
 }
 
+test("secret without hosts substitutes on every host", async () => {
+  const envName = "GONDOLIN_RISES_TEST_UNRESTRICTED_TOKEN";
+  const previous = process.env[envName];
+  process.env[envName] = "test-token-value";
+  try {
+    await writeFile(
+      path.join(state.configDir, "gondolin-rises.json"),
+      JSON.stringify({
+        _version: 0,
+        mounts: [],
+        secrets: { GH_TOKEN: { hostEnv: envName } },
+      }),
+    );
+    const h = await setup();
+    await h.emit("session_start");
+    assert.deepEqual(state.httpHookOptions, [
+      { secrets: { GH_TOKEN: { value: "test-token-value", hosts: ["*"] } } },
+    ]);
+    const { env, httpHooks } = state.vmOptions[0];
+    assert.ok(env && !Array.isArray(env));
+    assert.ok(env.GH_TOKEN);
+    assert.notEqual(env.GH_TOKEN, "test-token-value");
+    const onRequest = httpHooks?.onRequest;
+    assert.ok(onRequest);
+    for (const host of ["api.github.com", "example.org"]) {
+      const request = new Request(`https://${host}/`, {
+        headers: { Authorization: `Bearer ${env.GH_TOKEN}` },
+      });
+      const result: unknown = await onRequest(request);
+      assert.ok(result instanceof Request);
+      assert.equal(
+        result.headers.get("Authorization"),
+        "Bearer test-token-value",
+      );
+    }
+    await h.emit("session_shutdown");
+  } finally {
+    if (previous === undefined) delete process.env[envName];
+    else process.env[envName] = previous;
+  }
+});
+
 test("user bash starts VM lazily rather than falling through to host", async () => {
   const h = await setup();
   assert.ok((await h.emit("user_bash"))?.operations);
@@ -74,10 +116,12 @@ test("injects secret placeholders and HTTP hooks into VM without exposing values
         },
       },
     ]);
-    assert.deepEqual(state.vmOptions[0].env, {
-      HOME: guestWorkspacePath(state.homeDir),
-      GH_TOKEN: "placeholder:GH_TOKEN",
-    });
+    const env = state.vmOptions[0].env;
+    assert.ok(env && !Array.isArray(env));
+    assert.ok(env.GH_TOKEN);
+    assert.notEqual(env.GH_TOKEN, "test-token-value");
+    assert.equal(env.HOME, guestWorkspacePath(state.homeDir));
+    assert.deepEqual(Object.keys(env).sort(), ["GH_TOKEN", "HOME"]);
     assert.ok(state.httpHooks);
     assert.strictEqual(state.vmOptions[0].httpHooks, state.httpHooks);
     await h.emit("session_shutdown");
@@ -87,7 +131,7 @@ test("injects secret placeholders and HTTP hooks into VM without exposing values
   }
 });
 
-test("missing or empty secret credential blocks VM startup", async () => {
+test("missing or empty secret credential warns and does not block VM startup", async () => {
   const envName = "GONDOLIN_RISES_MISSING_TOKEN";
   const previous = process.env[envName];
   try {
@@ -105,12 +149,18 @@ test("missing or empty secret credential blocks VM startup", async () => {
       if (value === undefined) delete process.env[envName];
       else process.env[envName] = value;
       const h = await setup();
-      await assert.rejects(
-        h.emit("session_start"),
+      await h.emit("session_start");
+      assert.equal(state.starts, 1);
+      assert.match(
+        h.notices.join("\n"),
         new RegExp(`Missing secret environment variable ${envName}`),
       );
-      assert.equal(state.starts, 0);
-      assert.match(h.notices.join("\n"), new RegExp(envName));
+      assert.ok(
+        h.ctx.ui.notify.mock.calls.some(
+          (call) => call.arguments[1] === "warning",
+        ),
+      );
+      assert.equal(state.httpHookOptions.length, 0);
       await h.emit("session_shutdown");
     }
   } finally {

@@ -42,21 +42,22 @@ export function createSandbox(
       }
       let secretEnv: Record<string, string> = {};
       let httpHooks: HttpHooks | undefined;
-      if (Object.keys(configuredSecrets).length > 0) {
-        try {
-          const secrets = Object.fromEntries(
-            Object.entries(configuredSecrets).map(
-              ([name, { hostEnv, hosts }]) => {
-                const value = process.env[hostEnv];
-                if (!value) {
-                  throw new Error(
-                    `Missing secret environment variable ${hostEnv} (configured for ${name})`,
-                  );
-                }
-                return [name, { value, hosts: [...hosts] }];
-              },
-            ),
+      const secrets: Record<string, { value: string; hosts: string[] }> = {};
+      for (const [name, { hostEnv, hosts }] of Object.entries(
+        configuredSecrets,
+      )) {
+        const value = process.env[hostEnv];
+        if (!value) {
+          ctx?.ui.notify(
+            `Missing secret environment variable ${hostEnv} (configured for ${name})`,
+            "warning",
           );
+          continue;
+        }
+        secrets[name] = { value, hosts: [...(hosts ?? ["*"])] };
+      }
+      if (Object.keys(secrets).length > 0) {
+        try {
           const hooks = createHttpHooks({ secrets });
           secretEnv = hooks.env;
           httpHooks = hooks.httpHooks;

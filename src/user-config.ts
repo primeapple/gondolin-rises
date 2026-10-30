@@ -4,7 +4,7 @@ import path from "node:path";
 /** Parsed user config; paths resolved against the agent config directory. */
 export interface UserSecret {
   readonly hostEnv: string;
-  readonly hosts: readonly string[];
+  readonly hosts?: readonly string[];
 }
 
 export interface UserConfig {
@@ -86,12 +86,16 @@ export async function loadUserConfig(
           throw new Error(`secrets.${name}.hostEnv must be a non-empty string`);
         }
         if (
-          !Array.isArray(hosts) ||
-          hosts.some((host) => typeof host !== "string")
+          hosts !== undefined &&
+          (!Array.isArray(hosts) ||
+            hosts.some((host) => typeof host !== "string"))
         ) {
           throw new Error(`secrets.${name}.hosts must be an array of strings`);
         }
-        secretEntries.push([name, { hostEnv, hosts }]);
+        secretEntries.push([
+          name,
+          { hostEnv, ...(hosts === undefined ? {} : { hosts }) },
+        ]);
       }
       resolvedSecrets = Object.fromEntries(secretEntries);
     }

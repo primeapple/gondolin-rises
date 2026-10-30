@@ -142,9 +142,12 @@ function tool(name: string, cwd: string, options: ToolOptions = {}) {
   };
 }
 
-const { validateBuildConfig, parseBuildConfig, RealFSProvider } = await import(
-  "@earendil-works/gondolin"
-);
+const {
+  validateBuildConfig,
+  parseBuildConfig,
+  RealFSProvider,
+  createHttpHooks,
+} = await import("@earendil-works/gondolin");
 const { buildSystemPrompt, normalizeBuildSystemPromptOptions } = await import(
   "../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js"
 );
@@ -169,21 +172,11 @@ mock.module("@earendil-works/gondolin", {
       return state.sessions;
     },
     RealFSProvider,
-    createHttpHooks: (options: {
-      secrets?: Record<string, { value: string }>;
-    }) => {
+    createHttpHooks: (options: Parameters<typeof createHttpHooks>[0]) => {
       state.httpHookOptions.push(options);
-      const httpHooks: HttpHooks = {};
-      state.httpHooks = httpHooks;
-      return {
-        httpHooks,
-        env: Object.fromEntries(
-          Object.keys(options.secrets ?? {}).map((name) => [
-            name,
-            `placeholder:${name}`,
-          ]),
-        ),
-      };
+      const hooks = createHttpHooks(options);
+      state.httpHooks = hooks.httpHooks;
+      return hooks;
     },
     VM: {
       create: async (options: VMOptions) => {

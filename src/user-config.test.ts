@@ -75,11 +75,12 @@ test("user config rejects invalid version, paths, and mount targets", async (t) 
   }
 });
 
-test("user config resolves secret host environment mappings", async (t) => {
+test("user config resolves secret host environment mappings with optional hosts", async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const secrets = {
     GH_TOKEN: { hostEnv: "GITHUB_TOKEN", hosts: ["api.github.com"] },
+    GENERIC_TOKEN: { hostEnv: "GENERIC_TOKEN" },
   };
   await writeFile(
     path.join(dir, "gondolin-rises.json"),
