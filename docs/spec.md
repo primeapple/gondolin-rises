@@ -50,7 +50,7 @@ Optional `toggleHotkey` in `gondolin-rises.json` registers sandbox toggle shortc
 
 On: `read`, `write`, `edit`, `bash`, and user `!` commands run inside Gondolin. Mount host session CWD at same absolute guest path; also mount each directory listed in `gondolin-rises.json` at same absolute guest path. CWD and configured mounts must have actual provider roots inside canonical user home or host temp directory, including either directory itself; validate before VM starts. Outside roots fail startup with actionable error; never start VM with partial mount list. All tools may read and write through configured mounts. Gondolin enforces per-mount host symlink containment on access; symlinks escaping mount root cannot access host targets, even within home. Guest filesystem outside home remains accessible. Model prompt identifies VM and says host CWD is mounted there.
 
-Off: those tools and commands run on host. Model prompt stays unchanged. Status and notification show sandbox state, with host execution warning when off.
+Off: those tools and commands run on host. Model prompt stays unchanged. Status and notification show sandbox state, with host execution warning when off. When on, both show current CWD mount path.
 
 Keep VM while off; reuse when on. Close on session shutdown, including pending startup. Concurrent shutdown closes once. Shutdown prevents later VM startup and publication. Failed VM startup must not fall back to host; allow retry before shutdown.
 

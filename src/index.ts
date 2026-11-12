@@ -22,6 +22,7 @@ import {
   createGondolinEditOps,
   createGondolinReadOps,
   createGondolinWriteOps,
+  guestWorkspacePath,
 } from "./operations.ts";
 import { createSandbox } from "./sandbox.ts";
 
@@ -84,8 +85,9 @@ export default async function (pi: ExtensionAPI) {
   async function toggleSandbox(ctx: ExtensionContext) {
     if (!sandboxEnabled) await ensureVm(ctx);
     sandboxEnabled = !sandboxEnabled;
+    const mountPath = guestWorkspacePath(localCwd);
     const status = sandboxEnabled
-      ? "Gondolin: on"
+      ? `Gondolin: on (mount ${mountPath})`
       : "Gondolin: off — tools and ! commands run on host";
     ctx.ui.setStatus(
       "gondolin",

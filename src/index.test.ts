@@ -90,8 +90,8 @@ test("sandbox defaults on; toggle routes every tool, user bash, and prompt", asy
     (await h.emit("before_agent_start", prompt))?.systemPrompt ?? "",
     /Gondolin VM/,
   );
-  assert.match(h.statuses.at(-1) ?? "", /on/i);
-  assert.match(h.notices.at(-1) ?? "", /on/i);
+  assert.ok(h.statuses.at(-1)?.includes(`mount ${process.cwd()}`));
+  assert.ok(h.notices.at(-1)?.includes(`mount ${process.cwd()}`));
   assert.equal(state.starts, 1);
   await h.toggle();
   await h.emit("session_shutdown");
