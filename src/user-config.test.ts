@@ -180,3 +180,54 @@ test("user config rejects invalid sandbox instruction paths and targets", async 
     await assert.rejects(loadUserConfig(dir), /Invalid.*gondolin-rises.json/);
   }
 });
+
+test("user config preserves optional toggle hotkey without rewriting config", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "gondolin-rises.json");
+  const content = '{"_version":0,"mounts":[],"toggleHotkey":"ctrl+alt+s"}\n';
+  await writeFile(file, content);
+  assert.deepEqual(await loadUserConfig(dir), {
+    _version: 0,
+    mounts: [],
+    toggleHotkey: "ctrl+alt+s",
+  });
+  assert.equal(await readFile(file, "utf8"), content);
+});
+
+test("user config rejects malformed pi toggle key identifiers", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "gondolin-rises.json");
+  for (const toggleHotkey of [
+    null,
+    1,
+    [],
+    "",
+    "ctrl-s",
+    "ctrl+",
+    "ctrl+ctrl+s",
+    "ctrl+unknown",
+    "meta+s",
+    " ctrl+alt+s",
+  ]) {
+    await writeFile(
+      file,
+      JSON.stringify({ _version: 0, mounts: [], toggleHotkey }),
+    );
+    await assert.rejects(
+      loadUserConfig(dir),
+      /Invalid.*gondolin-rises.json.*toggleHotkey/,
+    );
+  }
+});
+
+test("user config rejects trailing newline in toggle hotkey", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(
+    path.join(dir, "gondolin-rises.json"),
+    JSON.stringify({ _version: 0, mounts: [], toggleHotkey: "ctrl+alt+s\n" }),
+  );
+  await assert.rejects(loadUserConfig(dir), /toggleHotkey/);
+});

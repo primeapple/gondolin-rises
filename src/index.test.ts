@@ -256,3 +256,64 @@ test("unreadable sandbox instruction file blocks VM startup with file path", asy
   assert.equal(state.starts, 0);
   assert.match(h.notices.join("\n"), /Cannot read sandboxAgentsFile/);
 });
+
+test("toggle hotkey is unset by default with or without user config", async () => {
+  assert.equal((await setup()).shortcuts.size, 0);
+  await writeFile(
+    path.join(state.configDir, "gondolin-rises.json"),
+    '{"_version":0,"mounts":[]}',
+  );
+  assert.equal((await setup()).shortcuts.size, 0);
+});
+
+test("configured hotkey shares command routing, warnings, and VM reuse", async () => {
+  await writeFile(
+    path.join(state.configDir, "gondolin-rises.json"),
+    '{"_version":0,"mounts":[],"toggleHotkey":"ctrl+alt+s"}',
+  );
+  const h = await setup();
+  const shortcut = h.shortcuts.get("ctrl+alt+s");
+  assert.ok(shortcut);
+  await h.emit("session_start");
+  await shortcut.handler(h.ctx);
+  await checkTools(h, false);
+  assert.equal(await h.emit("user_bash"), undefined);
+  assert.match(h.notices.at(-1) ?? "", /off.*host/i);
+  await h.toggle();
+  await checkTools(h, true);
+  await shortcut.handler(h.ctx);
+  await checkTools(h, false);
+  assert.equal(state.starts, 1);
+  assert.equal(state.closes, 0);
+  await h.emit("session_shutdown");
+});
+
+test("busy hotkey queues one toggle until settled and shutdown discards it", async () => {
+  await writeFile(
+    path.join(state.configDir, "gondolin-rises.json"),
+    '{"_version":0,"mounts":[],"toggleHotkey":"ctrl+alt+s"}',
+  );
+  const h = await setup();
+  const shortcut = h.shortcuts.get("ctrl+alt+s");
+  assert.ok(shortcut);
+  await h.emit("session_start");
+  h.ctx.isIdle = mock.fn(() => false);
+  // Shortcut contexts do not have command-only waitForIdle.
+  const { waitForIdle: _waitForIdle, ...shortcutContext } = h.ctx;
+  await shortcut.handler(shortcutContext);
+  await shortcut.handler(shortcutContext);
+  await checkTools(h, true);
+  assert.match(h.notices.at(-1) ?? "", /queued.*idle/i);
+  h.ctx.isIdle = mock.fn(() => true);
+  await h.emit("agent_settled");
+  await checkTools(h, false);
+  await h.emit("agent_settled");
+  await checkTools(h, false);
+  await h.toggle();
+  h.ctx.isIdle = mock.fn(() => false);
+  await shortcut.handler(h.ctx);
+  await h.emit("session_shutdown");
+  await h.emit("agent_settled");
+  assert.match(h.statuses.at(-1) ?? "", /on/i);
+  assert.equal(state.closes, 1);
+});

@@ -1,5 +1,22 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+type ToggleHotkey = Parameters<ExtensionAPI["registerShortcut"]>[0];
+
+function isToggleHotkey(value: unknown): value is ToggleHotkey {
+  if (typeof value !== "string") return false;
+  const match = /^((?:(?:ctrl|shift|alt|super)\+)*)(.+)$/.exec(value);
+  if (!match) return false;
+  const modifiers = match[1].split("+").filter(Boolean);
+  if (new Set(modifiers).size !== modifiers.length) return false;
+  const key = match[2];
+  return (
+    /^[a-z0-9]$/.test(key) ||
+    (key.length === 1 && "`-=\\[];',./!@#$%^&*()_+|~{}:<>?".includes(key)) ||
+    /^(?:escape|esc|enter|return|tab|space|backspace|delete|insert|clear|home|end|pageUp|pageDown|up|down|left|right|f[1-9]|f1[0-2])$/.test(key)
+  );
+}
 
 /** Parsed user config; paths resolved against the agent config directory. */
 export interface UserSecret {
@@ -11,6 +28,7 @@ export interface UserConfig {
   readonly _version: 0;
   readonly mounts: readonly string[];
   readonly sandboxAgentsFile?: string;
+  readonly toggleHotkey?: ToggleHotkey;
   readonly secrets?: Readonly<Record<string, UserSecret>>;
 }
 
@@ -32,14 +50,21 @@ export async function loadUserConfig(
     if (!config || typeof config !== "object" || Array.isArray(config)) {
       throw new Error("expected a JSON object");
     }
-    const { _version, mounts, sandboxAgentsFile, secrets } = config as {
-      _version?: unknown;
-      mounts?: unknown;
-      sandboxAgentsFile?: unknown;
-      secrets?: unknown;
-    };
+    const { _version, mounts, sandboxAgentsFile, secrets, toggleHotkey } =
+      config as {
+        _version?: unknown;
+        mounts?: unknown;
+        sandboxAgentsFile?: unknown;
+        secrets?: unknown;
+        toggleHotkey?: unknown;
+      };
     if (_version !== 0) throw new Error("_version must be 0");
     if (!Array.isArray(mounts)) throw new Error("mounts must be an array");
+    if (toggleHotkey !== undefined && !isToggleHotkey(toggleHotkey)) {
+      throw new Error(
+        "toggleHotkey must be a valid pi key identifier, e.g. ctrl+alt+s",
+      );
+    }
 
     let resolvedSandboxAgentsFile: string | undefined;
     if (sandboxAgentsFile !== undefined) {
@@ -122,6 +147,7 @@ export async function loadUserConfig(
       ...(resolvedSandboxAgentsFile === undefined
         ? {}
         : { sandboxAgentsFile: resolvedSandboxAgentsFile }),
+      ...(toggleHotkey === undefined ? {} : { toggleHotkey }),
       ...(resolvedSecrets === undefined ? {} : { secrets: resolvedSecrets }),
     };
   } catch (error) {

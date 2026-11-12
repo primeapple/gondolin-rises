@@ -46,6 +46,8 @@ Home path matching does not change guest username, UID, or GID. Never mount host
 ## Feature: Toggle
 Sandbox starts on. `/sandbox` toggles on or off after agent becomes idle.
 
+Optional `toggleHotkey` in `gondolin-rises.json` registers sandbox toggle shortcut. Unset by default; no shortcut without field. Require valid pi key identifier; invalid value fails sandbox startup with actionable error. Recommended opt-in: `ctrl+alt+g`, unbound in pi defaults. Config never rewritten. Shortcut uses same state, routing, VM reuse, and warnings as `/sandbox`. Busy shortcut queues one toggle until agent settles; repeated presses while busy keep one pending toggle. Shutdown discards pending toggle.
+
 On: `read`, `write`, `edit`, `bash`, and user `!` commands run inside Gondolin. Mount host session CWD at same absolute guest path; also mount each directory listed in `gondolin-rises.json` at same absolute guest path. CWD and configured mounts must have actual provider roots inside canonical user home or host temp directory, including either directory itself; validate before VM starts. Outside roots fail startup with actionable error; never start VM with partial mount list. All tools may read and write through configured mounts. Gondolin enforces per-mount host symlink containment on access; symlinks escaping mount root cannot access host targets, even within home. Guest filesystem outside home remains accessible. Model prompt identifies VM and says host CWD is mounted there.
 
 Off: those tools and commands run on host. Model prompt stays unchanged. Status and notification show sandbox state, with host execution warning when off.

@@ -51,6 +51,16 @@ pi --no-extensions -e /path/to/gondolin-rises
 
 Sandbox starts on. Run `/sandbox` inside pi to toggle off or on. Toggle waits for agent to become idle.
 
+No hotkey is bound by default. Opt in with optional `toggleHotkey` in `gondolin-rises.json`:
+
+```json
+{
+  "_version": 0,
+  "mounts": [],
+  "toggleHotkey": "ctrl+alt+g"
+}
+```
+
 When sandbox is on, optional `gondolin-rises.json` in Pi's agent config directory (`~/.pi/agent` by default; honors `PI_CODING_AGENT_DIR`) lists extra host directories to mount. Paths resolve relative to that config file and mount at the same guest path. All sandbox tools can read and write through them. For example, mount `~/.agents`:
 
 ```json

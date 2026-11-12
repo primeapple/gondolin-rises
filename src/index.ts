@@ -2,7 +2,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { type BuildConfig, listSessions } from "@earendil-works/gondolin";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import {
   getAgentDir,
   createBashTool,
@@ -68,6 +71,7 @@ export default async function (pi: ExtensionAPI) {
   });
 
   let sandboxEnabled = true;
+  let pendingToggle = false;
   const { ensureVm, close } = createSandbox(
     localCwd,
     config,
@@ -77,22 +81,40 @@ export default async function (pi: ExtensionAPI) {
     userConfig?.secrets,
   );
 
+  async function toggleSandbox(ctx: ExtensionContext) {
+    if (!sandboxEnabled) await ensureVm(ctx);
+    sandboxEnabled = !sandboxEnabled;
+    const status = sandboxEnabled
+      ? "Gondolin: on"
+      : "Gondolin: off — tools and ! commands run on host";
+    ctx.ui.setStatus(
+      "gondolin",
+      ctx.ui.theme.fg(sandboxEnabled ? "accent" : "warning", status),
+    );
+    ctx.ui.notify(status, sandboxEnabled ? "info" : "warning");
+  }
+
   pi.registerCommand("sandbox", {
     description: "Toggle Gondolin sandbox on or off",
     handler: async (_args, ctx) => {
       await ctx.waitForIdle();
-      if (!sandboxEnabled) await ensureVm(ctx);
-      sandboxEnabled = !sandboxEnabled;
-      const status = sandboxEnabled
-        ? "Gondolin: on"
-        : "Gondolin: off — tools and ! commands run on host";
-      ctx.ui.setStatus(
-        "gondolin",
-        ctx.ui.theme.fg(sandboxEnabled ? "accent" : "warning", status),
-      );
-      ctx.ui.notify(status, sandboxEnabled ? "info" : "warning");
+      await toggleSandbox(ctx);
     },
   });
+
+  if (userConfig?.toggleHotkey) {
+    pi.registerShortcut(userConfig.toggleHotkey, {
+      description: "Toggle Gondolin sandbox on or off",
+      handler: async (ctx) => {
+        if (!ctx.isIdle()) {
+          pendingToggle = true;
+          ctx.ui.notify("Sandbox toggle queued until agent is idle.", "info");
+          return;
+        }
+        await toggleSandbox(ctx);
+      },
+    });
+  }
 
   pi.on("session_start", async (_event, ctx) => {
     if (pi.getFlag("update-gondolin-image") === true) {
@@ -131,7 +153,14 @@ export default async function (pi: ExtensionAPI) {
     if (sandboxEnabled) await ensureVm(ctx);
   });
 
+  pi.on("agent_settled", async (_event, ctx) => {
+    if (!pendingToggle) return;
+    pendingToggle = false;
+    await toggleSandbox(ctx);
+  });
+
   pi.on("session_shutdown", async (_event, ctx) => {
+    pendingToggle = false;
     await close(ctx);
   });
 

@@ -245,6 +245,7 @@ const { default: extension } = await import("./index.ts");
 function createContext(statuses: string[], notices: string[]) {
   return {
     waitForIdle: mock.fn(async () => {}),
+    isIdle: mock.fn(() => true),
     shutdown: mock.fn(),
     ui: {
       theme: { fg: (_color: string, text: string) => text },
@@ -260,6 +261,7 @@ function createContext(statuses: string[], notices: string[]) {
 type FixtureContext = ReturnType<typeof createContext>;
 type EventResults = {
   session_start: undefined;
+  agent_settled: undefined;
   session_shutdown: undefined;
   user_bash: { operations: BashOperations } | undefined;
   before_agent_start: { systemPrompt: string } | undefined;
@@ -297,6 +299,10 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
   state.failVerification = false;
   const events = new Map<keyof EventResults, Handler>();
   const commands = new Map<string, Command>();
+  const shortcuts = new Map<
+    string,
+    Parameters<ExtensionAPI["registerShortcut"]>[1]
+  >();
   const registeredFlags = new Map<string, Flag>();
   const tools = new Map<string, RoutedTool>();
   const statuses: string[] = [];
@@ -316,6 +322,12 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
     registerCommand: (name: string, command: Command) => {
       commands.set(name, command);
     },
+    registerShortcut: (
+      key: string,
+      shortcut: Parameters<ExtensionAPI["registerShortcut"]>[1],
+    ) => {
+      shortcuts.set(key, shortcut);
+    },
     registerFlag: (name: string, flag: Flag) => {
       registeredFlags.set(name, flag);
     },
@@ -327,6 +339,7 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
     statuses,
     notices,
     registeredFlags,
+    shortcuts,
     emit: async <Name extends keyof EventResults>(
       name: Name,
       event: object = {},
