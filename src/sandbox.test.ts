@@ -350,10 +350,25 @@ test("Gondolin blocks host symlink escapes on access without scanning", async ()
   await h.emit("session_shutdown");
 });
 
+test("session startup does not wait for VM readiness", async () => {
+  const h = await setup();
+  state.startBarrier = Promise.withResolvers<void>();
+  const starting = h.emitFast("session_start");
+  await waitForVmStart();
+  const settled = await Promise.race([
+    starting.then(() => true),
+    new Promise<boolean>((resolve) => setImmediate(() => resolve(false))),
+  ]);
+  state.startBarrier.resolve();
+  await starting;
+  assert.equal(settled, true);
+  await h.emit("session_shutdown");
+});
+
 test("failed startup stays sandboxed, supports off, and retries safely", async () => {
   const h = await setup();
   state.failStart = true;
-  await assert.rejects(h.emit("session_start"), /VM unavailable/);
+  await h.emitFast("session_start");
   await assert.rejects(h.emit("user_bash"), /VM unavailable/);
   const read = h.tools.get("read");
   assert.ok(read);
@@ -375,12 +390,11 @@ test("failed startup stays sandboxed, supports off, and retries safely", async (
 test("shutdown waits for pending startup and closes it without publishing", async () => {
   const h = await setup();
   state.startBarrier = Promise.withResolvers<void>();
-  const starting = h.emit("session_start");
-  const rejected = assert.rejects(starting, /shut down/);
+  const starting = h.emitFast("session_start");
   await waitForVmStart();
   const closing = h.emit("session_shutdown");
   state.startBarrier.resolve();
-  await Promise.all([closing, rejected]);
+  await Promise.all([closing, starting]);
   assert.equal(state.closes, 1);
   assert.doesNotMatch(h.notices.join("\n"), /VM ready/);
   await assert.rejects(h.emit("user_bash"), /shut down/);
@@ -390,7 +404,7 @@ test("concurrent startup shares one VM", async () => {
   const h = await setup();
   state.startBarrier = Promise.withResolvers<void>();
   const calls = [
-    h.emit("session_start"),
+    h.emitFast("session_start"),
     h.emit("user_bash"),
     h.emit("before_agent_start", prompt),
   ];

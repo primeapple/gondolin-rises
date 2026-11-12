@@ -151,8 +151,20 @@ export default async function (pi: ExtensionAPI) {
       return;
     }
 
-    // Start eagerly so the user sees errors early (missing qemu, etc.)
-    if (sandboxEnabled) await ensureVm(ctx);
+    // Start eagerly, but let Pi accept input while the VM boots.
+    if (sandboxEnabled) {
+      void ensureVm(ctx).catch((error: unknown) => {
+        if (
+          error instanceof Error &&
+          error.message === "Gondolin sandbox shut down"
+        ) {
+          return;
+        }
+        console.error(
+          `Failed to start Gondolin VM: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    }
   });
 
   pi.on("agent_settled", async (_event, ctx) => {

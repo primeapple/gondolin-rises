@@ -44,7 +44,7 @@ Guest `HOME` matches host `os.homedir()`. Guest home directory exists. Sandbox s
 Home path matching does not change guest username, UID, or GID. Never mount host home automatically. Only CWD and configured mounts expose host files; unmounted home paths remain guest-local. Existing tool path restrictions and mount containment stay unchanged. Never forward full host environment.
 
 ## Feature: Toggle
-Sandbox starts on. `/sandbox` toggles on or off after agent becomes idle.
+Sandbox starts on. Start VM in background without blocking Pi input readiness. Agent start and sandbox operations wait for VM readiness. Startup errors remain visible. `/sandbox` toggles on or off after agent becomes idle.
 
 Optional `toggleHotkey` in `gondolin-rises.json` registers sandbox toggle shortcut. Unset by default; no shortcut without field. Require valid pi key identifier; invalid value fails sandbox startup with actionable error. Recommended opt-in: `ctrl+alt+g`, unbound in pi defaults. Config never rewritten. Shortcut uses same state, routing, VM reuse, and warnings as `/sandbox`. Busy shortcut queues one toggle until agent settles; repeated presses while busy keep one pending toggle. Shutdown discards pending toggle.
 

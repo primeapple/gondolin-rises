@@ -333,6 +333,27 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
     },
     getFlag: (name: string) => flags[name],
   } as unknown as ExtensionAPI);
+  const dispatch = async <Name extends keyof EventResults>(
+    name: Name,
+    event: object = {},
+  ): Promise<EventResults[Name]> => {
+    const handler = events.get(name);
+    assert.ok(handler, `Missing handler: ${name}`);
+    if (name === "before_agent_start") {
+      // Match Pi runner: fresh mutable options, dynamically rendered prompt.
+      const options = normalizeBuildSystemPromptOptions(
+        (event as typeof prompt).systemPromptOptions,
+      );
+      event = {
+        ...event,
+        systemPromptOptions: options,
+        get systemPrompt() {
+          return buildSystemPrompt(options);
+        },
+      };
+    }
+    return (await handler(event, ctx)) as EventResults[Name];
+  };
   return {
     ctx,
     tools,
@@ -340,27 +361,18 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
     notices,
     registeredFlags,
     shortcuts,
+    // Most tests need a ready VM; emitFast exercises the raw nonblocking event.
     emit: async <Name extends keyof EventResults>(
       name: Name,
       event: object = {},
     ): Promise<EventResults[Name]> => {
-      const handler = events.get(name);
-      assert.ok(handler, `Missing handler: ${name}`);
-      if (name === "before_agent_start") {
-        // Match Pi runner: fresh mutable options, dynamically rendered prompt.
-        const options = normalizeBuildSystemPromptOptions(
-          (event as typeof prompt).systemPromptOptions,
-        );
-        event = {
-          ...event,
-          systemPromptOptions: options,
-          get systemPrompt() {
-            return buildSystemPrompt(options);
-          },
-        };
+      const result = await dispatch(name, event);
+      if (name === "session_start" && flags["update-gondolin-image"] !== true) {
+        await dispatch("before_agent_start", prompt);
       }
-      return (await handler(event, ctx)) as EventResults[Name];
+      return result;
     },
+    emitFast: dispatch,
     toggle: () => {
       const command = commands.get("sandbox");
       assert.ok(command);
