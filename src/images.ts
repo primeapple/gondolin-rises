@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { accessSync, constants, statSync } from "node:fs";
 import {
   mkdir,
   readFile,
@@ -61,9 +62,21 @@ function readImageConfig(dir: string): BuildConfig {
     throw new Error("Missing or invalid Gondolin image manifest");
   }
   loadGuestAssets(dir);
+  for (const asset of Object.values(manifest.assets)) {
+    const assetPath = path.join(dir, asset);
+    if (!statSync(assetPath).isFile()) {
+      throw new Error(`Gondolin image asset is not a file: ${assetPath}`);
+    }
+    accessSync(assetPath, constants.R_OK);
+  }
+  return manifest.config;
+}
+
+function readBuiltImageConfig(dir: string): BuildConfig {
+  const config = readImageConfig(dir);
   if (!verifyAssets(dir))
     throw new Error("Gondolin image failed asset verification");
-  return manifest.config;
+  return config;
 }
 
 async function readStoredPointer(
@@ -137,7 +150,7 @@ export async function rebuildImage(
   await mkdir(path.dirname(outputDir), { recursive: true });
   try {
     await buildAssets(buildConfig, { outputDir, configDir });
-    const config = readImageConfig(outputDir);
+    const config = readBuiltImageConfig(outputDir);
     const pointer = {
       imageKey,
       buildId,

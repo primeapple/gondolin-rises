@@ -34,6 +34,7 @@ type FixtureState = {
   failStart: boolean;
   failBuild: boolean;
   failVerification: boolean;
+  verifications: string[];
   sessions: { alive: boolean }[];
   sessionError: boolean;
   buildOptions: { outputDir: string; configDir?: string }[];
@@ -60,6 +61,7 @@ export const state: FixtureState = {
   failStart: false,
   failBuild: false,
   failVerification: false,
+  verifications: [],
   sessions: [],
   sessionError: false,
   buildOptions: [],
@@ -211,6 +213,7 @@ mock.module("@earendil-works/gondolin", {
         path.join(options.outputDir, "manifest.json"),
         JSON.stringify({
           config: manifestConfig,
+          assets: { kernel: "built", initramfs: "built", rootfs: "built" },
           runtimeDefaults: config.runtimeDefaults,
         }),
       );
@@ -225,8 +228,10 @@ mock.module("@earendil-works/gondolin", {
         return null;
       }
     },
-    verifyAssets: (dir: string) =>
-      !state.failVerification && existsSync(path.join(dir, "built")),
+    verifyAssets: (dir: string) => {
+      state.verifications.push(dir);
+      return !state.failVerification && existsSync(path.join(dir, "built"));
+    },
     loadGuestAssets: (dir: string) => {
       if (!existsSync(path.join(dir, "built")))
         throw new Error("incomplete guest image");
@@ -297,6 +302,7 @@ export async function setup(flags: Partial<Record<string, boolean>> = {}) {
   state.failStart = false;
   state.failBuild = false;
   state.failVerification = false;
+  state.verifications = [];
   const events = new Map<keyof EventResults, Handler>();
   const commands = new Map<string, Command>();
   const shortcuts = new Map<

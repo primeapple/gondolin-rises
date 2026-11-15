@@ -14,7 +14,9 @@ function isToggleHotkey(value: unknown): value is ToggleHotkey {
   return (
     /^[a-z0-9]$/.test(key) ||
     (key.length === 1 && "`-=\\[];',./!@#$%^&*()_+|~{}:<>?".includes(key)) ||
-    /^(?:escape|esc|enter|return|tab|space|backspace|delete|insert|clear|home|end|pageUp|pageDown|up|down|left|right|f[1-9]|f1[0-2])$/.test(key)
+    /^(?:escape|esc|enter|return|tab|space|backspace|delete|insert|clear|home|end|pageUp|pageDown|up|down|left|right|f[1-9]|f1[0-2])$/.test(
+      key,
+    )
   );
 }
 

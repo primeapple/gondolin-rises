@@ -74,6 +74,29 @@ test("manual image update installs a pointer and startup reuses it", async () =>
   assert.equal(existsSync(imagePath), false);
 });
 
+test("startup reuses active image without rehashing assets", async () => {
+  await writeFile(
+    state.configFile,
+    JSON.stringify({
+      arch: "x86_64",
+      distro: "alpine",
+      alpine: { version: "3.23.0", rootfsPackages: ["git"] },
+    }),
+  );
+  await (await setup({ "update-gondolin-image": true })).emit("session_start");
+  assert.equal(state.verifications.length, 1);
+
+  const h = await setup();
+  await h.emit("session_start");
+  assert.ok(state.vmOptions[0].sandbox?.imagePath);
+  assert.deepEqual(
+    state.verifications,
+    [],
+    "startup must not rehash the active image",
+  );
+  await h.emit("session_shutdown");
+});
+
 test("stale image stays active until update succeeds", async () => {
   state.gondolinVersion = "v0.13.0";
   await writeFile(
@@ -657,7 +680,7 @@ test("rebuild leaves legacy cache entries untouched even when active pointer use
   await h.emit("session_shutdown");
 });
 
-test("damaged cached assets report error and use default without cache repair", async () => {
+test("damaged cached image reports error and uses default without cache repair", async () => {
   await writeFile(state.configFile, '{"arch":"x86_64","distro":"alpine"}');
   await (await setup({ "update-gondolin-image": true })).emit("session_start");
   const pointerPath = path.join(
@@ -667,11 +690,20 @@ test("damaged cached assets report error and use default without cache repair", 
     "active.json",
   );
   const content = await readFile(pointerPath, "utf8");
+  const pointer = JSON.parse(content);
+  await writeFile(
+    path.join(
+      path.dirname(pointerPath),
+      pointer.imageKey,
+      pointer.buildId,
+      "manifest.json",
+    ),
+    "broken",
+  );
   const h = await setup();
-  state.failVerification = true;
   await h.emit("session_start");
   assert.equal(state.vmOptions[0].sandbox, undefined);
-  assert.match(h.notices.join("\n"), /verification/i);
+  assert.match(h.notices.join("\n"), /manifest/i);
   assert.equal(await readFile(pointerPath, "utf8"), content);
   await h.emit("session_shutdown");
 });
