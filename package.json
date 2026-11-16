@@ -38,5 +38,11 @@
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "allowScripts": {
+    "@google/genai@2.21.0": true,
+    "protobufjs@7.6.6": true,
+    "cpu-features": false,
+    "ssh2": false
   }
 }
