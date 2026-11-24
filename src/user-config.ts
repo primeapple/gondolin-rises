@@ -29,6 +29,7 @@ export interface UserSecret {
 export interface UserConfig {
   readonly _version: 0;
   readonly mounts: readonly string[];
+  readonly guestOnlyDirectories?: readonly string[];
   readonly sandboxAgentsFile?: string;
   readonly toggleHotkey?: ToggleHotkey;
   readonly secrets?: Readonly<Record<string, UserSecret>>;
@@ -52,16 +53,41 @@ export async function loadUserConfig(
     if (!config || typeof config !== "object" || Array.isArray(config)) {
       throw new Error("expected a JSON object");
     }
-    const { _version, mounts, sandboxAgentsFile, secrets, toggleHotkey } =
-      config as {
-        _version?: unknown;
-        mounts?: unknown;
-        sandboxAgentsFile?: unknown;
-        secrets?: unknown;
-        toggleHotkey?: unknown;
-      };
+    const {
+      _version,
+      mounts,
+      guestOnlyDirectories,
+      sandboxAgentsFile,
+      secrets,
+      toggleHotkey,
+    } = config as {
+      _version?: unknown;
+      mounts?: unknown;
+      guestOnlyDirectories?: unknown;
+      sandboxAgentsFile?: unknown;
+      secrets?: unknown;
+      toggleHotkey?: unknown;
+    };
     if (_version !== 0) throw new Error("_version must be 0");
     if (!Array.isArray(mounts)) throw new Error("mounts must be an array");
+    if (
+      guestOnlyDirectories !== undefined &&
+      (!Array.isArray(guestOnlyDirectories) ||
+        guestOnlyDirectories.some(
+          (name) =>
+            typeof name !== "string" ||
+            name.trim().length === 0 ||
+            name === "." ||
+            name === ".." ||
+            name.includes("/") ||
+            name.includes("\\") ||
+            name.includes("\u0000"),
+        ))
+    ) {
+      throw new Error(
+        "guestOnlyDirectories must be an array of nonblank directory names, excluding ., .., /, \\ and NUL",
+      );
+    }
     if (toggleHotkey !== undefined && !isToggleHotkey(toggleHotkey)) {
       throw new Error(
         "toggleHotkey must be a valid pi key identifier, e.g. ctrl+alt+s",
@@ -146,6 +172,7 @@ export async function loadUserConfig(
     return {
       _version: 0,
       mounts: resolvedMounts,
+      ...(guestOnlyDirectories === undefined ? {} : { guestOnlyDirectories }),
       ...(resolvedSandboxAgentsFile === undefined
         ? {}
         : { sandboxAgentsFile: resolvedSandboxAgentsFile }),

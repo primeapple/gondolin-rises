@@ -80,6 +80,7 @@ export default async function (pi: ExtensionAPI) {
     configError?.message,
     userConfigError?.message,
     userConfig?.secrets,
+    userConfig?.guestOnlyDirectories,
   );
 
   async function toggleSandbox(ctx: ExtensionContext) {

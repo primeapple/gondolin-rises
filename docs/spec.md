@@ -38,6 +38,18 @@ Optional `sandboxAgentsFile` in `gondolin-rises.json` names relative Markdown fi
 
 Read replacement at extension startup. Replace normal global instruction entry from pi config directory; never append or supply original global contents alongside replacement. Keep all project and ancestor instruction entries unchanged. Empty replacement suppresses normal global instructions too. Instruction selection stays fixed across `/sandbox` toggles; toggling changes execution only, not instructions.
 
+## Feature: Guest-only directories
+
+Optional `guestOnlyDirectories` in `gondolin-rises.json` lists literal, case-sensitive directory names. Missing field or empty array preserves current mount behavior. Require array of nonblank strings. Reject names equal to `.` or `..`, or containing `/`, `\`, or NUL. Never interpret entries as paths, globs, or regex. Invalid values fail sandbox startup before VM creation; never rewrite config.
+
+- Load rules at extension startup; apply before VM starts. No image rebuild required.
+- Match whole path components at any depth in CWD and every configured host mount, including mounts rooted inside matching directories. No recursive discovery or startup directory walk.
+- Hide matching host entries and descendants from sandbox reads and listings. Guest may create separate writable contents at same paths. Never expose matching host contents. Operations targeting matching paths or symlink aliases must not modify, delete, or rename matching host entries. Renaming shared ancestor directories may move hidden host descendants; no guard or recursive scan required.
+- Symlink aliases and additional mounts must not bypass isolation. Existing mount-root validation and symlink containment remain unchanged.
+- `read`, `write`, `edit`, `bash`, and user `!` commands share isolated view. Paths outside matching subtrees retain existing behavior; guest filesystem outside host mounts stays unchanged.
+- Fresh VM starts with empty isolated contents. Keep guest-created contents while VM is reused across `/sandbox` toggles; discard on VM shutdown. Sandbox-off operations use ordinary host view.
+- No automatic dependency installation or persistent dependency cache. Source and lockfiles outside matching subtrees remain shared and writable.
+
 ## Feature: Home path
 Guest `HOME` matches host `os.homedir()`. Guest home directory exists. Sandbox shell startup preserves this value, so bare `~` resolves to same absolute path as on host. Applies to default and custom images; no build-config change or image rebuild required.
 

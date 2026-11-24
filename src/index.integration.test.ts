@@ -10,8 +10,9 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { mock, test } from "node:test";
-import type { ExecOptions } from "@earendil-works/gondolin";
+import type { ExecOptions, VMOptions } from "@earendil-works/gondolin";
 import type {
+  BashOperations,
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
@@ -36,11 +37,20 @@ const pi = await import("@earendil-works/pi-coding-agent");
 const gondolin = await import("@earendil-works/gondolin");
 let agentDir: string;
 let activeVm: object;
+let vmOptions: VMOptions;
 mock.module("@earendil-works/pi-coding-agent", {
   namedExports: { ...pi, getAgentDir: () => agentDir },
 });
 mock.module("@earendil-works/gondolin", {
-  namedExports: { ...gondolin, VM: { create: async () => activeVm } },
+  namedExports: {
+    ...gondolin,
+    VM: {
+      create: async (options: VMOptions) => {
+        vmOptions = options;
+        return activeVm;
+      },
+    },
+  },
 });
 const { default: extension } = await import("./index.ts");
 
@@ -71,6 +81,29 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
   process.chdir(workspace);
   const guestCwd = process.cwd();
   agentDir = path.join(workspace, "agent");
+  await mkdir(agentDir);
+  await writeFile(
+    path.join(agentDir, "gondolin-rises.json"),
+    JSON.stringify({
+      _version: 0,
+      mounts: [],
+      guestOnlyDirectories: ["node_modules"],
+    }),
+  );
+  await mkdir(path.join(workspace, "node_modules"));
+  await writeFile(
+    path.join(workspace, "node_modules", "host.txt"),
+    "host dependency\n",
+  );
+
+  function dependencyPath(p: string) {
+    const relative = path.relative(guestCwd, p).split(path.sep).join("/");
+    if (relative !== "node_modules" && !relative.startsWith("node_modules/"))
+      return null;
+    const provider = vmOptions.vfs?.mounts?.[guestCwd];
+    assert.ok(provider?.readFile && provider.writeFile && provider.access);
+    return { provider, relative: `/${relative}` };
+  }
 
   const files = new Map([
     [path.join(guestCwd, "example.txt"), Buffer.from("guest original\n")],
@@ -82,18 +115,28 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
     fs: {
       access: async (p: string) => {
         calls.push({ operation: "access", path: p });
+        const mounted = dependencyPath(p);
+        if (mounted) return mounted.provider.access?.(mounted.relative);
         if (!files.has(p)) throw new Error("ENOENT");
       },
       readFile: async (p: string) => {
         calls.push({ operation: "read", path: p });
+        const mounted = dependencyPath(p);
+        if (mounted) return mounted.provider.readFile?.(mounted.relative);
         if (!files.has(p)) throw new Error("ENOENT");
         return files.get(p);
       },
       mkdir: async (p: string) => {
         calls.push({ operation: "mkdir", path: p });
+        const mounted = dependencyPath(p);
+        if (mounted)
+          await mounted.provider.mkdir(mounted.relative, { recursive: true });
       },
       writeFile: async (p: string, content: string) => {
         calls.push({ operation: "write", path: p });
+        const mounted = dependencyPath(p);
+        if (mounted)
+          return mounted.provider.writeFile?.(mounted.relative, content);
         files.set(p, Buffer.from(content));
       },
     },
@@ -103,7 +146,20 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
       calls.push({ operation: "bash", args, options });
       return Object.assign(Promise.resolve({ exitCode: 0 }), {
         output: async function* () {
-          yield { data: Buffer.from("guest shell\n") };
+          // Fake shell reads the same mounted provider as real Pi file tools.
+          if (args[2]?.endsWith("\ncat node_modules/guest.txt")) {
+            const mounted = dependencyPath(
+              path.join(guestCwd, "node_modules", "guest.txt"),
+            );
+            assert.ok(mounted?.provider.readFile);
+            yield {
+              data: Buffer.from(
+                await mounted.provider.readFile(mounted.relative),
+              ),
+            };
+          } else {
+            yield { data: Buffer.from("guest shell\n") };
+          }
         },
       });
     },
@@ -222,7 +278,54 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
     execute("read", { path: path.join(guestCwd, "..", "sibling", "file") }),
     /path escapes workspace/,
   );
+  await assert.rejects(
+    execute("read", { path: "node_modules/host.txt" }),
+    /ENOENT/,
+  );
+  await execute("write", {
+    path: "node_modules/guest.txt",
+    content: "guest dependency\n",
+  });
+  await execute("edit", {
+    path: "node_modules/guest.txt",
+    edits: [{ oldText: "guest dependency", newText: "guest edited dependency" }],
+  });
+  assert.equal(
+    text(await execute("read", { path: "node_modules/guest.txt" })),
+    "guest edited dependency\n",
+  );
+  assert.equal(
+    text(await execute("bash", { command: "cat node_modules/guest.txt" })),
+    "guest edited dependency\n",
+  );
+  const userBash = (await events.get("user_bash")?.(
+    { type: "user_bash" },
+    ctx,
+  )) as { operations: BashOperations };
+  assert.ok(userBash?.operations);
+  const chunks: Buffer[] = [];
+  await userBash.operations.exec("cat node_modules/guest.txt", guestCwd, {
+    onData: (data) => chunks.push(Buffer.from(data)),
+  });
+  assert.equal(Buffer.concat(chunks).toString(), "guest edited dependency\n");
+  assert.equal(
+    await readFile(path.join(workspace, "node_modules", "host.txt"), "utf8"),
+    "host dependency\n",
+  );
+  await assert.rejects(
+    readFile(path.join(workspace, "node_modules", "guest.txt")),
+    /ENOENT/,
+  );
+
   await toggle();
+  assert.equal(
+    text(await execute("read", { path: "node_modules/host.txt" })),
+    "host dependency\n",
+  );
+  assert.equal(
+    await events.get("user_bash")?.({ type: "user_bash" }, ctx),
+    undefined,
+  );
   const host = await execute("read", { path: "example.txt" });
   assert.equal(text(host), "host original\n");
   await execute("write", { path: "host.txt", content: "host written\n" });
@@ -232,6 +335,10 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
   );
   assert.equal(files.has(path.join(guestCwd, "host.txt")), false);
   await toggle();
+  assert.equal(
+    text(await execute("read", { path: "node_modules/guest.txt" })),
+    "guest edited dependency\n",
+  );
   assert.equal(
     text(await execute("read", { path: "example.txt" })),
     "guest edited\n",

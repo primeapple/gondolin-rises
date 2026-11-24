@@ -5,6 +5,8 @@ import {
   type BuildConfig,
   type HttpHooks,
   RealFSProvider,
+  ShadowProvider,
+  type VirtualProvider,
   VM,
   createHttpHooks,
   getDefaultBuildConfig,
@@ -23,6 +25,7 @@ export function createSandbox(
   configError?: string,
   mountsError?: string,
   configuredSecrets: Readonly<Record<string, UserSecret>> = {},
+  guestOnlyDirectories: readonly string[] = [],
 ) {
   let vm: VM | null = null;
   let vmStarting: Promise<VM> | null = null;
@@ -100,11 +103,12 @@ export function createSandbox(
       }
 
       if (stopped) throw new Error("Gondolin sandbox shut down");
-      let mounts: Record<string, RealFSProvider>;
+      let mounts: Record<string, VirtualProvider>;
       try {
         const allowedRoots = [os.homedir(), os.tmpdir()].map((root) =>
           realpathSync(root),
         );
+        const names = new Set(guestOnlyDirectories);
         mounts = Object.fromEntries(
           [localCwd, ...configuredMounts].map((hostPath) => {
             const provider = new RealFSProvider(hostPath);
@@ -121,7 +125,20 @@ export function createSandbox(
                 `Cannot mount ${hostPath}: resolves outside user home and temp directory (${allowedRoots.join(", ")}). Use a directory inside home or temp.`,
               );
             }
-            return [guestWorkspacePath(hostPath), provider];
+            const rootShadowed = [hostPath, provider.rootPath].some((root) =>
+              root.split(path.sep).some((part) => names.has(part)),
+            );
+            return [
+              guestWorkspacePath(hostPath),
+              names.size === 0
+                ? provider
+                : new ShadowProvider(provider, {
+                    writeMode: "tmpfs",
+                    shouldShadow: ({ path: entryPath }) =>
+                      rootShadowed ||
+                      entryPath.split("/").some((part) => names.has(part)),
+                  }),
+            ];
           }),
         );
       } catch (error) {

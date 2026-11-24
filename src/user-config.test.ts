@@ -231,3 +231,52 @@ test("user config rejects trailing newline in toggle hotkey", async (t) => {
   );
   await assert.rejects(loadUserConfig(dir), /toggleHotkey/);
 });
+
+test("user config preserves literal guest-only names without rewriting config", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "gondolin-rises.json");
+  for (const guestOnlyDirectories of [[], ["node_modules", ".venv", " spaced "]]) {
+    const content = `${JSON.stringify({ _version: 0, mounts: [], guestOnlyDirectories })}\n`;
+    await writeFile(file, content);
+    assert.deepEqual(await loadUserConfig(dir), {
+      _version: 0,
+      mounts: [],
+      guestOnlyDirectories,
+    });
+    assert.equal(await readFile(file, "utf8"), content);
+  }
+});
+
+test("user config rejects invalid guest-only names", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "gondolin-rises.json");
+  for (const guestOnlyDirectories of [
+    null,
+    "node_modules",
+    {},
+    1,
+    [null],
+    [1],
+    [""],
+    [" \t\n"],
+    ["."],
+    [".."],
+    ["a/b"],
+    ["a\\b"],
+    ["a\u0000b"],
+  ]) {
+    const content = JSON.stringify({
+      _version: 0,
+      mounts: [],
+      guestOnlyDirectories,
+    });
+    await writeFile(file, content);
+    await assert.rejects(
+      loadUserConfig(dir),
+      /Invalid.*gondolin-rises.json.*guestOnlyDirectories/,
+    );
+    assert.equal(await readFile(file, "utf8"), content);
+  }
+});

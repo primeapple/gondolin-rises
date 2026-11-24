@@ -91,6 +91,26 @@ Set `GITHUB_TOKEN` in pi's host environment. Guest sees placeholder in `GH_TOKEN
 
 When off, `read`, `write`, `edit`, `bash`, and user `!` commands run directly on host, without VM isolation. Status and notification show current state.
 
+### Guest-only directories
+
+Optional `guestOnlyDirectories` in `gondolin-rises.json` hides host dependency directories and gives guest separate writable contents at same paths:
+
+```json
+{
+  "_version": 0,
+  "mounts": [],
+  "guestOnlyDirectories": ["node_modules"]
+}
+```
+
+This example covers `node_modules` at any depth in CWD and extra mounts, including monorepos or explicitly mounted home directory. Matching runs on filesystem access; no startup directory walk. Names are literal and case-sensitive, not paths, globs, or regex. Add `.venv` for Python environments if needed.
+
+Operations inside isolated directories leave host dependency contents untouched. Renaming a shared parent directory can still move its hidden host descendants; no recursive scan or rename guard. Install required Linux dependencies inside guest; isolation does not install packages or make Darwin binaries run on Linux. Source and lockfiles outside isolated directories remain shared and writable.
+
+Guest dependencies live in memory. They survive `/sandbox` off/on while VM stays alive, but disappear on shutdown. When sandbox is off, tools see ordinary host dependencies. Missing option or empty array keeps current behavior. Restart Pi to apply config; no image rebuild required.
+
+See [requirements](docs/spec.md#feature-guest-only-directories) and [implementation plan](docs/plans/guest-only-directories.md).
+
 ### Sandbox instructions
 
 Optional `sandboxAgentsFile` in `gondolin-rises.json` selects replacement global instructions:

@@ -148,6 +148,7 @@ const {
   validateBuildConfig,
   parseBuildConfig,
   RealFSProvider,
+  ShadowProvider,
   createHttpHooks,
 } = await import("@earendil-works/gondolin");
 const { buildSystemPrompt, normalizeBuildSystemPromptOptions } = await import(
@@ -174,6 +175,7 @@ mock.module("@earendil-works/gondolin", {
       return state.sessions;
     },
     RealFSProvider,
+    ShadowProvider,
     createHttpHooks: (options: Parameters<typeof createHttpHooks>[0]) => {
       state.httpHookOptions.push(options);
       const hooks = createHttpHooks(options);
