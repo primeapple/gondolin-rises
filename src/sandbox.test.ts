@@ -3,6 +3,7 @@ import { mkdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { mock, test } from "node:test";
+import type { VirtualProvider } from "@earendil-works/gondolin";
 import { guestWorkspacePath } from "./operations.ts";
 import { checkTools, prompt, setup, state } from "./test-fixtures.ts";
 
@@ -471,7 +472,11 @@ test("failed guest home setup closes VM without publication and allows retry", a
 
 test("guest-only directories hide host trees and keep guest writes separate", async () => {
   const cwd = process.cwd();
-  for (const directory of ["node_modules", "packages/app/node_modules", ".venv"]) {
+  for (const directory of [
+    "node_modules",
+    "packages/app/node_modules",
+    ".venv",
+  ]) {
     await mkdir(path.join(cwd, directory), { recursive: true });
     await writeFile(path.join(cwd, directory, "host.txt"), "host dependency");
   }
@@ -506,7 +511,11 @@ test("guest-only directories hide host trees and keep guest writes separate", as
     (await provider.readFile("/case/Node_modules/host.txt")).toString(),
     "case-sensitive dependency",
   );
-  for (const directory of ["/node_modules", "/packages/app/node_modules", "/.venv"]) {
+  for (const directory of [
+    "/node_modules",
+    "/packages/app/node_modules",
+    "/.venv",
+  ]) {
     await assert.rejects(provider.readFile(`${directory}/host.txt`), /ENOENT/);
     await provider.mkdir(directory);
     await provider.writeFile(`${directory}/guest.txt`, "guest dependency");
@@ -525,7 +534,10 @@ test("guest-only directories hide host trees and keep guest writes separate", as
   }
   await provider.writeFile("/source.ts", "guest source");
   await provider.writeFile("/package-lock.json", "guest lockfile");
-  assert.equal(await readFile(path.join(cwd, "source.ts"), "utf8"), "guest source");
+  assert.equal(
+    await readFile(path.join(cwd, "source.ts"), "utf8"),
+    "guest source",
+  );
   assert.equal(
     await readFile(path.join(cwd, "package-lock.json"), "utf8"),
     "guest lockfile",
@@ -571,7 +583,7 @@ test("guest-only rules apply to every mount, including roots inside hidden trees
     await assert.rejects(provider.readFile(hidden), /ENOENT/);
   }
   for (const root of [dependency, alias]) {
-    const provider = mounts[guestWorkspacePath(root)];
+    const provider: VirtualProvider = mounts[guestWorkspacePath(root)];
     assert.ok(provider?.readFile && provider.writeFile);
     assert.deepEqual(await provider.readdir("/"), []);
     await provider.writeFile("/guest.txt", "guest dependency");
@@ -579,7 +591,10 @@ test("guest-only rules apply to every mount, including roots inside hidden trees
       (await provider.readFile("/guest.txt")).toString(),
       "guest dependency",
     );
-    await assert.rejects(readFile(path.join(dependency, "guest.txt")), /ENOENT/);
+    await assert.rejects(
+      readFile(path.join(dependency, "guest.txt")),
+      /ENOENT/,
+    );
   }
   assert.equal(
     await readFile(path.join(dependency, "host.txt"), "utf8"),
@@ -637,7 +652,9 @@ test("guest-only rules hide later host entries and prevent symlink and rename by
     "/packages/app/node_modules/renamed.txt",
   );
   assert.equal(
-    (await provider.readFile("/packages/app/node_modules/renamed.txt")).toString(),
+    (
+      await provider.readFile("/packages/app/node_modules/renamed.txt")
+    ).toString(),
     "guest dependency",
   );
   await assert.rejects(
@@ -661,7 +678,10 @@ test("guest-only rules hide later host entries and prevent symlink and rename by
 test("empty guest-only config keeps host dependencies shared", async () => {
   const cwd = process.cwd();
   await mkdir(path.join(cwd, "node_modules"));
-  await writeFile(path.join(cwd, "node_modules", "host.txt"), "host dependency");
+  await writeFile(
+    path.join(cwd, "node_modules", "host.txt"),
+    "host dependency",
+  );
   await writeFile(
     path.join(state.configDir, "gondolin-rises.json"),
     JSON.stringify({
@@ -732,7 +752,10 @@ test("guest-only contents survive VM reuse and start empty in a fresh session", 
   await fresh.emit("session_start");
   const freshProvider = state.vmOptions[0].vfs?.mounts?.[process.cwd()];
   assert.ok(freshProvider?.readFile);
-  await assert.rejects(freshProvider.readFile("/node_modules/guest.txt"), /ENOENT/);
+  await assert.rejects(
+    freshProvider.readFile("/node_modules/guest.txt"),
+    /ENOENT/,
+  );
   await fresh.emit("session_shutdown");
 });
 
@@ -761,7 +784,10 @@ test("shared parent renames stay allowed and moved host dependencies remain hidd
     ),
     "host dependency",
   );
-  await assert.rejects(readFile(path.join(hostDirectory, "host.txt")), /ENOENT/);
+  await assert.rejects(
+    readFile(path.join(hostDirectory, "host.txt")),
+    /ENOENT/,
+  );
   await assert.rejects(
     provider.readFile("/packages/moved/node_modules/host.txt"),
     /ENOENT/,
@@ -773,7 +799,10 @@ test("shared parent renames stay allowed and moved host dependencies remain hidd
 test("guest-only dependencies support package executable symlink lookup", async () => {
   const cwd = process.cwd();
   await mkdir(path.join(cwd, "node_modules"));
-  await writeFile(path.join(cwd, "node_modules", "host.txt"), "host dependency");
+  await writeFile(
+    path.join(cwd, "node_modules", "host.txt"),
+    "host dependency",
+  );
   await writeFile(
     path.join(state.configDir, "gondolin-rises.json"),
     JSON.stringify({

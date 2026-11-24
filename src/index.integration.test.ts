@@ -288,7 +288,9 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
   });
   await execute("edit", {
     path: "node_modules/guest.txt",
-    edits: [{ oldText: "guest dependency", newText: "guest edited dependency" }],
+    edits: [
+      { oldText: "guest dependency", newText: "guest edited dependency" },
+    ],
   });
   assert.equal(
     text(await execute("read", { path: "node_modules/guest.txt" })),

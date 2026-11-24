@@ -236,7 +236,10 @@ test("user config preserves literal guest-only names without rewriting config", 
   const dir = await mkdtemp(path.join(os.tmpdir(), "gondolin-user-config-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, "gondolin-rises.json");
-  for (const guestOnlyDirectories of [[], ["node_modules", ".venv", " spaced "]]) {
+  for (const guestOnlyDirectories of [
+    [],
+    ["node_modules", ".venv", " spaced "],
+  ]) {
     const content = `${JSON.stringify({ _version: 0, mounts: [], guestOnlyDirectories })}\n`;
     await writeFile(file, content);
     assert.deepEqual(await loadUserConfig(dir), {
