@@ -1,32 +1,37 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
-  "vcs": {
-    "enabled": true,
-    "clientKind": "git",
-    "useIgnoreFile": true
-  },
-  "files": {
-    "ignoreUnknown": true,
-    "includes": ["**", "!package-lock.json"]
-  },
-  "formatter": {
-    "enabled": true,
-    "useEditorconfig": true,
-    "indentStyle": "space",
-    "indentWidth": 2
-  },
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "preset": "recommended",
-      "suspicious": {
-        "noRedundantUseStrict": "off"
-      }
-    }
-  },
-  "javascript": {
-    "formatter": {
-      "quoteStyle": "double"
-    }
-  }
+	"$schema": "https://biomejs.dev/schemas/2.6.8/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"ignoreUnknown": true,
+		"includes": ["**", "!package-lock.json"]
+	},
+	"formatter": {
+		"enabled": true,
+		"useEditorconfig": true
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"suspicious": {
+				"noRedundantUseStrict": "off"
+			}
+		}
+	},
+	"javascript": {
+		"globals": [
+			"GM_getValue",
+			"GM_registerMenuCommand",
+			"GM_setClipboard",
+			"GM_setValue",
+			"GM_unregisterMenuCommand"
+		],
+		"formatter": {
+			"quoteStyle": "double"
+		}
+	}
 }

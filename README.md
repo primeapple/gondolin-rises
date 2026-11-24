@@ -140,6 +140,7 @@ pi --update-gondolin-image --print
 Extension never creates or rewrites config. Relative paths resolve against config file directory. Gondolin supplies defaults and validation; `alpine.rootfsPackages` replaces package list rather than adding to it. Legacy cache entries stay untouched.
 
 Pi startup never builds images or repairs cache:
+
 - No config: default Gondolin image, including environment overrides; no custom-image warning.
 - Valid config, no image: default image plus update warning.
 - Valid cached custom image: use it, even when stale. Changed parsed config or Gondolin version warns on each startup. Formatting, timestamps, and changes to referenced files do not mark image stale.
@@ -155,6 +156,7 @@ Cache: `$XDG_CACHE_HOME/gondolin-rises/images` (default: `~/.cache/gondolin-rise
 ## Development
 
 Runtime owners:
+
 - `src/index.ts`: pi registration, events, toggle, and prompt wiring.
 - `src/build-config.ts`: optional upstream image build-config loading and validation.
 - `src/user-config.ts`: optional runtime mount config typing, validation, and path resolution.

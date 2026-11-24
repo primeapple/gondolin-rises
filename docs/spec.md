@@ -1,6 +1,7 @@
 # Spec
 
 ## General
+
 pi extension providing configurable pi sandbox via Gondolin.
 
 Requires Node.js 24 or newer.
@@ -31,7 +32,6 @@ Optional `gondolin-rises.json` in pi config directory controls extra host mounts
 
 Optional `secrets` object maps guest environment variable names, except reserved `HOME`, to `{ hostEnv, hosts? }`. Guest names must match `[A-Za-z_][A-Za-z0-9_]*`; reject invalid names during config loading. `hostEnv` names host environment variable holding secret value; never store secret values in config. Optional `hosts` lists host patterns where Gondolin may substitute that secret; when omitted, substitute on every host. Read host values at sandbox startup; unset or empty values warn and skip those secrets without blocking sandbox startup. Use `createHttpHooks` for available definitions and pass both returned `env` placeholders and `httpHooks` to VM. Never pass real secret values into guest environment. Do not configure global `allowedHosts` or other `createHttpHooks` options. Per-secret `hosts` limits secret substitution only; it does not restrict general network access. Invalid or unreadable config fails sandbox startup with actionable error.
 
-
 ### Sandbox instructions
 
 Optional `sandboxAgentsFile` in `gondolin-rises.json` names relative Markdown file; resolve against config directory. Configured missing, non-file, or unreadable target fails sandbox startup with actionable error. Unset field preserves normal global instructions. Never create or rewrite instruction files; no guest mount or image rebuild required.
@@ -51,11 +51,13 @@ Optional `guestOnlyDirectories` in `gondolin-rises.json` lists literal, case-sen
 - No automatic dependency installation or persistent dependency cache. Source and lockfiles outside matching subtrees remain shared and writable.
 
 ## Feature: Home path
+
 Guest `HOME` matches host `os.homedir()`. Guest home directory exists. Sandbox shell startup preserves this value, so bare `~` resolves to same absolute path as on host. Applies to default and custom images; no build-config change or image rebuild required.
 
 Home path matching does not change guest username, UID, or GID. Never mount host home automatically. Only CWD and configured mounts expose host files; unmounted home paths remain guest-local. Existing tool path restrictions and mount containment stay unchanged. Never forward full host environment.
 
 ## Feature: Toggle
+
 Sandbox starts on. Start VM in background without blocking Pi input readiness. Agent start and sandbox operations wait for VM readiness. Startup errors remain visible. `/sandbox` toggles on or off after agent becomes idle.
 
 Optional `toggleHotkey` in `gondolin-rises.json` registers sandbox toggle shortcut. Unset by default; no shortcut without field. Require valid pi key identifier; invalid value fails sandbox startup with actionable error. Recommended opt-in: `ctrl+alt+g`, unbound in pi defaults. Config never rewritten. Shortcut uses same state, routing, VM reuse, and warnings as `/sandbox`. Busy shortcut queues one toggle until agent settles; repeated presses while busy keep one pending toggle. Shutdown discards pending toggle.
