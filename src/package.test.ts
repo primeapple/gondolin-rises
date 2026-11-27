@@ -20,6 +20,7 @@ test("package includes every runtime module", async () => {
     "src/images.ts",
     "src/index.ts",
     "src/operations.ts",
+    "src/ownership-provider.ts",
     "src/sandbox.ts",
     "src/user-config.ts",
   ]);

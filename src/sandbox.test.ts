@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  stat,
+  symlink,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { mock, test } from "node:test";
-import type { VirtualProvider } from "@earendil-works/gondolin";
+import {
+  RealFSProvider,
+  ShadowProvider,
+  type VirtualProvider,
+} from "@earendil-works/gondolin";
 import { guestWorkspacePath } from "./operations.ts";
 import { checkTools, prompt, setup, state } from "./test-fixtures.ts";
 
@@ -832,4 +843,170 @@ test("guest-only dependencies support package executable symlink lookup", async 
     /ENOENT/,
   );
   await h.emit("session_shutdown");
+});
+
+for (const isolated of [false, true]) {
+  test(`all mounts report effective host owners as root${isolated ? " with guest-only directories" : ""}`, async (t) => {
+    const cwd = process.cwd();
+    const extra = path.join(state.homeDir, "shared");
+    const alias = path.join(state.configDir, "alias");
+    await mkdir(extra);
+    await symlink(extra, alias);
+    for (const root of [cwd, state.homeDir, extra]) {
+      await writeFile(path.join(root, "file.txt"), "host contents");
+    }
+    const before = await stat(path.join(cwd, "file.txt"));
+    const uid = t.mock.fn(() => 501);
+    const gid = t.mock.fn(() => 20);
+    t.mock.property(process, "geteuid", uid);
+    t.mock.property(process, "getegid", gid);
+    const originalStat = RealFSProvider.prototype.stat;
+    // Filesystem boundary simulates non-root host ownership even on root-run CI.
+    t.mock.method(
+      RealFSProvider.prototype,
+      "stat",
+      async function (
+        this: RealFSProvider,
+        entryPath: string,
+        options?: object,
+      ) {
+        return Object.assign(
+          await originalStat.call(this, entryPath, options),
+          {
+            uid: 501,
+            gid: 20,
+          },
+        );
+      },
+    );
+    if (isolated) {
+      // Tmpfs defaults to 0:0; non-root fixtures make translation observable.
+      const shadowStat = ShadowProvider.prototype.stat;
+      t.mock.method(
+        ShadowProvider.prototype,
+        "stat",
+        async function (
+          this: ShadowProvider,
+          ...args: Parameters<ShadowProvider["stat"]>
+        ) {
+          const stats = await shadowStat.apply(this, args);
+          if (args[0].startsWith("/node_modules/")) {
+            Object.assign(stats, { uid: 501, gid: 20 });
+          }
+          return stats;
+        },
+      );
+      const shadowOpen = ShadowProvider.prototype.open;
+      t.mock.method(
+        ShadowProvider.prototype,
+        "open",
+        async function (
+          this: ShadowProvider,
+          ...args: Parameters<ShadowProvider["open"]>
+        ) {
+          const handle = await shadowOpen.apply(this, args);
+          if (args[0].startsWith("/node_modules/")) {
+            const handleStat = handle.stat.bind(handle);
+            t.mock.method(handle, "stat", async (options?: object) =>
+              Object.assign(await handleStat(options), { uid: 501, gid: 20 }),
+            );
+          }
+          return handle;
+        },
+      );
+    }
+    await writeFile(
+      path.join(state.configDir, "gondolin-rises.json"),
+      JSON.stringify({
+        _version: 0,
+        mounts: [state.homeDir, extra, alias].map((root) =>
+          path.relative(state.configDir, root),
+        ),
+        guestOnlyDirectories: isolated ? ["node_modules"] : [],
+      }),
+    );
+    const h = await setup();
+    await h.emit("session_start");
+    for (const root of [cwd, state.homeDir, extra, alias]) {
+      const provider =
+        state.vmOptions[0].vfs?.mounts?.[guestWorkspacePath(root)];
+      assert.ok(provider);
+      const stats = await provider.stat("/file.txt");
+      assert.equal(stats.uid, 0);
+      assert.equal(stats.gid, 0);
+      assert.equal(stats.mode, before.mode);
+      assert.equal(stats.isFile(), true);
+      assert.ok(provider.readFile && provider.writeFile);
+      assert.equal(
+        (await provider.readFile("/file.txt")).toString(),
+        "host contents",
+      );
+      if (isolated) {
+        await provider.mkdir("/node_modules");
+        await provider.writeFile("/node_modules/guest.txt", "guest contents");
+        const guestStats = await provider.stat("/node_modules/guest.txt");
+        assert.equal(guestStats.uid, 0);
+        assert.equal(guestStats.gid, 0);
+        const guestHandle = await provider.open("/node_modules/guest.txt", "r");
+        try {
+          assert.equal((await guestHandle.stat()).uid, 0);
+          assert.equal((await guestHandle.stat()).gid, 0);
+        } finally {
+          await guestHandle.close();
+        }
+        await assert.rejects(
+          readFile(path.join(root, "node_modules", "guest.txt")),
+          /ENOENT/,
+        );
+      }
+    }
+    const after = await stat(path.join(cwd, "file.txt"));
+    assert.equal(after.uid, before.uid);
+    assert.equal(after.gid, before.gid);
+    assert.equal(after.mode, before.mode);
+    await h.toggle();
+    await h.toggle();
+    assert.equal(state.starts, 1);
+    assert.equal(uid.mock.callCount(), 1);
+    assert.equal(gid.mock.callCount(), 1);
+    assert.equal(state.builds, 0);
+    await h.emit("session_shutdown");
+  });
+}
+
+test("invalid effective host identity blocks startup before VM creation with actionable error", async (t) => {
+  const { createSandbox } = await import("./sandbox.ts");
+  const h = await setup();
+  for (const field of ["geteuid", "getegid"] as const) {
+    for (const value of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const identity = t.mock.property(process, field, () => value);
+      const sandbox = createSandbox(process.cwd(), null, []);
+      await assert.rejects(
+        sandbox.ensureVm(h.ctx),
+        /effective UID\/GID.*invalid.*geteuid/,
+      );
+      assert.equal(state.starts, 0);
+      await sandbox.close();
+      identity.mock.restore();
+    }
+  }
+  assert.ok(
+    h.ctx.ui.notify.mock.calls.some((call) => call.arguments[1] === "error"),
+  );
+});
+
+test("unavailable effective host identity fails startup without using real IDs", async (t) => {
+  const { createSandbox } = await import("./sandbox.ts");
+  const h = await setup();
+  for (const field of ["geteuid", "getegid"] as const) {
+    const identity = t.mock.property(process, field, undefined);
+    const sandbox = createSandbox(process.cwd(), null, []);
+    await assert.rejects(
+      sandbox.ensureVm(h.ctx),
+      /effective UID\/GID unavailable.*geteuid/,
+    );
+    assert.equal(state.starts, 0);
+    await sandbox.close();
+    identity.mock.restore();
+  }
 });

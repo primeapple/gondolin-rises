@@ -5,6 +5,7 @@ import {
   mkdtemp,
   readFile,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import os from "node:os";
@@ -95,10 +96,35 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
     path.join(workspace, "node_modules", "host.txt"),
     "host dependency\n",
   );
+  await mkdir(path.join(workspace, "shared"));
+  const sharedFile = path.join(workspace, "shared", "file.txt");
+  await writeFile(sharedFile, "shared original\n", { mode: 0o640 });
+  const hostMetadata = await stat(sharedFile);
+  t.mock.property(process, "geteuid", () => 501);
+  t.mock.property(process, "getegid", () => 20);
+  const originalStat = gondolin.RealFSProvider.prototype.stat;
+  t.mock.method(
+    gondolin.RealFSProvider.prototype,
+    "stat",
+    async function (
+      this: InstanceType<typeof gondolin.RealFSProvider>,
+      entryPath: string,
+      options?: object,
+    ) {
+      return Object.assign(await originalStat.call(this, entryPath, options), {
+        uid: 501,
+        gid: 20,
+      });
+    },
+  );
 
-  function dependencyPath(p: string) {
+  function mountedPath(p: string) {
     const relative = path.relative(guestCwd, p).split(path.sep).join("/");
-    if (relative !== "node_modules" && !relative.startsWith("node_modules/"))
+    if (
+      !["node_modules", "shared"].some(
+        (root) => relative === root || relative.startsWith(`${root}/`),
+      )
+    )
       return null;
     const provider = vmOptions.vfs?.mounts?.[guestCwd];
     assert.ok(provider?.readFile && provider.writeFile && provider.access);
@@ -115,26 +141,26 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
     fs: {
       access: async (p: string) => {
         calls.push({ operation: "access", path: p });
-        const mounted = dependencyPath(p);
+        const mounted = mountedPath(p);
         if (mounted) return mounted.provider.access?.(mounted.relative);
         if (!files.has(p)) throw new Error("ENOENT");
       },
       readFile: async (p: string) => {
         calls.push({ operation: "read", path: p });
-        const mounted = dependencyPath(p);
+        const mounted = mountedPath(p);
         if (mounted) return mounted.provider.readFile?.(mounted.relative);
         if (!files.has(p)) throw new Error("ENOENT");
         return files.get(p);
       },
       mkdir: async (p: string) => {
         calls.push({ operation: "mkdir", path: p });
-        const mounted = dependencyPath(p);
+        const mounted = mountedPath(p);
         if (mounted)
           await mounted.provider.mkdir(mounted.relative, { recursive: true });
       },
       writeFile: async (p: string, content: string) => {
         calls.push({ operation: "write", path: p });
-        const mounted = dependencyPath(p);
+        const mounted = mountedPath(p);
         if (mounted)
           return mounted.provider.writeFile?.(mounted.relative, content);
         files.set(p, Buffer.from(content));
@@ -147,16 +173,22 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
       return Object.assign(Promise.resolve({ exitCode: 0 }), {
         output: async function* () {
           // Fake shell reads the same mounted provider as real Pi file tools.
-          if (args[2]?.endsWith("\ncat node_modules/guest.txt")) {
-            const mounted = dependencyPath(
-              path.join(guestCwd, "node_modules", "guest.txt"),
-            );
+          const catPath = ["node_modules/guest.txt", "shared/file.txt"].find(
+            (entry) => args[2]?.endsWith(`\ncat ${entry}`),
+          );
+          if (catPath) {
+            const mounted = mountedPath(path.join(guestCwd, catPath));
             assert.ok(mounted?.provider.readFile);
             yield {
               data: Buffer.from(
                 await mounted.provider.readFile(mounted.relative),
               ),
             };
+          } else if (args[2]?.endsWith("\nstat shared/file.txt")) {
+            const mounted = mountedPath(sharedFile);
+            assert.ok(mounted);
+            const stats = await mounted.provider.stat(mounted.relative);
+            yield { data: Buffer.from(`${stats.uid}:${stats.gid}\n`) };
           } else {
             yield { data: Buffer.from("guest shell\n") };
           }
@@ -319,7 +351,42 @@ test("extension executes real pi tools in VM, then on host after toggle", async 
     /ENOENT/,
   );
 
+  assert.equal(
+    text(await execute("read", { path: "shared/file.txt" })),
+    "shared original\n",
+  );
+  await execute("write", {
+    path: "shared/file.txt",
+    content: "shared written\n",
+  });
+  await execute("edit", {
+    path: "shared/file.txt",
+    edits: [{ oldText: "shared written", newText: "shared edited" }],
+  });
+  assert.equal(await readFile(sharedFile, "utf8"), "shared edited\n");
+  assert.equal(
+    text(await execute("bash", { command: "cat shared/file.txt" })),
+    "shared edited\n",
+  );
+  assert.equal(
+    text(await execute("bash", { command: "stat shared/file.txt" })),
+    "0:0\n",
+  );
+  const metadataChunks: Buffer[] = [];
+  await userBash.operations.exec("stat shared/file.txt", guestCwd, {
+    onData: (data) => metadataChunks.push(Buffer.from(data)),
+  });
+  assert.equal(Buffer.concat(metadataChunks).toString(), "0:0\n");
+  const afterMetadata = await stat(sharedFile);
+  assert.equal(afterMetadata.uid, hostMetadata.uid);
+  assert.equal(afterMetadata.gid, hostMetadata.gid);
+  assert.equal(afterMetadata.mode, hostMetadata.mode);
+
   await toggle();
+  assert.equal(
+    text(await execute("read", { path: "shared/file.txt" })),
+    "shared edited\n",
+  );
   assert.equal(
     text(await execute("read", { path: "node_modules/host.txt" })),
     "host dependency\n",

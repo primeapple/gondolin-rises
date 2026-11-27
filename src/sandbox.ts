@@ -16,6 +16,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertHostDependencies } from "./dependencies.ts";
 import { getStartupImage } from "./images.ts";
 import { guestWorkspacePath } from "./operations.ts";
+import { createOwnershipProvider } from "./ownership-provider.ts";
 import type { UserSecret } from "./user-config.ts";
 
 export function createSandbox(
@@ -27,6 +28,8 @@ export function createSandbox(
   configuredSecrets: Readonly<Record<string, UserSecret>> = {},
   guestOnlyDirectories: readonly string[] = [],
 ) {
+  const hostUid = process.geteuid?.();
+  const hostGid = process.getegid?.();
   let vm: VM | null = null;
   let vmStarting: Promise<VM> | null = null;
   const imageNoticesShown = new Set<string>();
@@ -105,6 +108,18 @@ export function createSandbox(
       if (stopped) throw new Error("Gondolin sandbox shut down");
       let mounts: Record<string, VirtualProvider>;
       try {
+        if (
+          hostUid === undefined ||
+          hostGid === undefined ||
+          !Number.isSafeInteger(hostUid) ||
+          !Number.isSafeInteger(hostGid) ||
+          hostUid < 0 ||
+          hostGid < 0
+        ) {
+          throw new Error(
+            "Cannot translate mounted ownership: host effective UID/GID unavailable or invalid. Run pi on a host with process.geteuid() and process.getegid() support.",
+          );
+        }
         const allowedRoots = [os.homedir(), os.tmpdir()].map((root) =>
           realpathSync(root),
         );
@@ -130,14 +145,18 @@ export function createSandbox(
             );
             return [
               guestWorkspacePath(hostPath),
-              names.size === 0
-                ? provider
-                : new ShadowProvider(provider, {
-                    writeMode: "tmpfs",
-                    shouldShadow: ({ path: entryPath }) =>
-                      rootShadowed ||
-                      entryPath.split("/").some((part) => names.has(part)),
-                  }),
+              createOwnershipProvider(
+                names.size === 0
+                  ? provider
+                  : new ShadowProvider(provider, {
+                      writeMode: "tmpfs",
+                      shouldShadow: ({ path: entryPath }) =>
+                        rootShadowed ||
+                        entryPath.split("/").some((part) => names.has(part)),
+                    }),
+                hostUid,
+                hostGid,
+              ),
             ];
           }),
         );

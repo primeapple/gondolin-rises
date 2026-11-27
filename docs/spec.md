@@ -50,6 +50,14 @@ Optional `guestOnlyDirectories` in `gondolin-rises.json` lists literal, case-sen
 - Fresh VM starts with empty isolated contents. Keep guest-created contents while VM is reused across `/sandbox` toggles; discard on VM shutdown. Sandbox-off operations use ordinary host view.
 - No automatic dependency installation or persistent dependency cache. Source and lockfiles outside matching subtrees remain shared and writable.
 
+## Feature: Mounted ownership
+
+On CWD and configured host mounts, report host process effective UID as guest root UID `0`. Report matching effective GID as guest root GID `0`. Translate fields independently; preserve unmatched IDs. Apply to shared entries and guest-created isolated entries.
+
+- Path, symlink, and open-file metadata report same ownership. Preserve other metadata and file-type behavior. Translation never changes host data, ownership, or permission bits.
+- Keep guest command identity, root privileges, host access checks, mount containment, and symlink restrictions unchanged. Guest-local files outside host mounts and Gondolin internal mounts remain unchanged. Sandbox off keeps ordinary host view.
+- Enabled by default. No new config, guest packages, image rebuild, or build-process change. Never add Git trust exceptions. No startup directory scan or extra per-file filesystem lookup. No matching host/guest permission-model guarantee.
+
 ## Feature: Home path
 
 Guest `HOME` matches host `os.homedir()`. Guest home directory exists. Sandbox shell startup preserves this value, so bare `~` resolves to same absolute path as on host. Applies to default and custom images; no build-config change or image rebuild required.

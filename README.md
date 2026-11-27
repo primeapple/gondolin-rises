@@ -111,6 +111,14 @@ Guest dependencies live in memory. They survive `/sandbox` off/on while VM stays
 
 See [requirements](docs/spec.md#feature-guest-only-directories) and [implementation plan](docs/plans/guest-only-directories.md).
 
+### Mounted ownership
+
+On CWD and extra host mounts, matching host process effective UID and GID appear as guest root `0:0`. Fields translate independently; foreign IDs stay unchanged. Shared files and guest-only contents use the same ownership view.
+
+Metadata translation never changes host ownership or permissions. Guest remains root; host access checks and mount containment stay unchanged. Host and guest permission models can still differ. Sandbox off uses ordinary host view. Enabled by default; restart Pi to apply, with no config or image rebuild.
+
+See [requirements](docs/spec.md#feature-mounted-ownership).
+
 ### Sandbox instructions
 
 Optional `sandboxAgentsFile` in `gondolin-rises.json` selects replacement global instructions:
@@ -163,6 +171,7 @@ Runtime owners:
 - `src/images.ts`: image build, validation, cache selection, and atomic activation. Startup never writes cache.
 - `src/operations.ts`: VM filesystem and bash adapters; current path policy unchanged.
 - `src/sandbox.ts`: VM startup, reuse, and idempotent shutdown, including pending startup.
+- `src/ownership-provider.ts`: mounted metadata ownership view; other provider operations unchanged.
 
 Checks:
 
