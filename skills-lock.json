@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "skills": {
+    "caveman": {
+      "source": "https://raw.githubusercontent.com/JuliusBrussee/caveman/main/skills/caveman/SKILL.md",
+      "sourceUrl": "https://raw.githubusercontent.com/JuliusBrussee/caveman/main/skills/caveman/SKILL.md",
+      "sourceType": "download",
+      "skillPath": "SKILL.md",
+      "computedHash": "c21d1571b103ee398b17ccdaa3246c2ea306dd7ccd816d1c338b25952be5934a"
+    }
+  }
+}

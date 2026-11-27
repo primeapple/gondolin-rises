@@ -11,7 +11,8 @@
 	},
 	"formatter": {
 		"enabled": true,
-		"useEditorconfig": true
+		"useEditorconfig": true,
+		"includes": ["**", "!.agents/skills/**"]
 	},
 	"linter": {
 		"enabled": true,
